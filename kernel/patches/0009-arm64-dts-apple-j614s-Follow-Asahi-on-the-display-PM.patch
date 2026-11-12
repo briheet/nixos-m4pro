@@ -1,0 +1,58 @@
+From fe04f50c87ed83100786e12a55a12fb051edeff6 Mon Sep 17 00:00:00 2001
+From: nixos-m4pro <local@local>
+Date: Thu, 12 Nov 2026 21:44:50 +0000
+Subject: [PATCH 9/9] arm64: dts: apple: j614s: Follow Asahi on the display
+ PMGR domains
+
+disp_cpu, dispext0_cpu and dispext1_cpu are locked by the firmware and
+disabled in Asahi's t6041-pmgr.dtsi ("Locked, don't touch"). Setting
+AUTO_ENABLE on disp_cpu, as the driver does at probe for active domains,
+raised an SError on J614s. disp_fe keeps apple,min-state = <4> as there.
+With this the generated list matches t6041-pmgr.dtsi on every shared
+domain except ans, which stays on.
+---
+ arch/arm64/boot/dts/apple/t6040-j614s-pmgr.dtsi | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/apple/t6040-j614s-pmgr.dtsi b/arch/arm64/boot/dts/apple/t6040-j614s-pmgr.dtsi
+index 77fbc7135..176aa8dc0 100644
+--- a/arch/arm64/boot/dts/apple/t6040-j614s-pmgr.dtsi
++++ b/arch/arm64/boot/dts/apple/t6040-j614s-pmgr.dtsi
+@@ -580,6 +580,7 @@ ps_disp_fe: power-controller@368 {
+ 		#power-domain-cells = <0>;
+ 		power-domains = <&ps_disp_sys>;
+ 		#reset-cells = <0>;
++		apple,min-state = <4>;
+ 	};
+ 
+ 	ps_ans: power-controller@370 {
+@@ -708,6 +709,8 @@ ps_disp_cpu: power-controller@10000 {
+ 		#power-domain-cells = <0>;
+ 		power-domains = <&ps_disp_fe>;
+ 		#reset-cells = <0>;
++
++		status = "disabled"; /* Locked, don't touch */
+ 	};
+ };
+ 
+@@ -1127,6 +1130,8 @@ ps_dispext0_cpu: power-controller@350 {
+ 		#power-domain-cells = <0>;
+ 		power-domains = <&ps_dispext0_fe>;
+ 		#reset-cells = <0>;
++
++		status = "disabled"; /* Locked, don't touch */
+ 	};
+ 
+ 	ps_atc0_common: power-controller@390 {
+@@ -1439,6 +1444,8 @@ ps_dispext1_cpu: power-controller@4a0 {
+ 		#power-domain-cells = <0>;
+ 		power-domains = <&ps_dispext1_fe>;
+ 		#reset-cells = <0>;
++
++		status = "disabled"; /* Locked, don't touch */
+ 	};
+ 
+ 	ps_venc0_dma: power-controller@8000 {
+-- 
+2.47.0
+

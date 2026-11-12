@@ -85,6 +85,40 @@ let is_cpu_domain d =
     (fun p -> String.length d.name >= String.length p && String.sub d.name 0 (String.length p) = p)
     [ "ecpu"; "pcpu"; "ecpm"; "pcpm" ]
 
+(* Domains the firmware does not mark critical but that must stay on, found
+   by powering each candidate off on the live machine (tools/pd-trial) and
+   waiting for a reset. Only ans did it: the machine resets 193 s after it is
+   gated, every time. Asahi's t8132-pmgr.dtsi (base M4) marks ans always-on
+   for the same reason ("Device reboots after 3-5 minutes if disabled"). The
+   other 62 domains Linux turns off at boot stayed off for 240 s. *)
+let must_stay_on =
+  [
+    ("ans", "the machine resets about 3 minutes after this is gated (193 s on J614s)");
+    (* Asahi's curated t6041-pmgr.dtsi marks aic always-on; the ADT does not
+       flag it critical. *)
+    ("aic", "the interrupt controller; always-on in Asahi's t6041 list");
+  ]
+
+(* Domains the ADT flags critical that must not be forced on. The pms_fpwm
+   domains sit at actual state 0x4 and never report the requested state, so
+   the driver's power-on at probe fails ("Failed to reach power state 0xf")
+   and is followed by an SError. Asahi's t6041-pmgr.dtsi leaves them as
+   ordinary domains too. *)
+let not_always_on = [ "pms_fpwm0"; "pms_fpwm1"; "pms_fpwm2"; "pms_fpwm3"; "pms_fpwm4" ]
+
+(* Display domains Asahi's curated t6041-pmgr.dtsi treats specially, which
+   the ADT does not flag. The display coprocessors' CPU domains are locked by
+   the firmware ("Locked, don't touch"): setting AUTO_ENABLE on disp_cpu, as
+   the driver does at probe, raised an SError on J614s. disp_fe keeps a
+   minimum state of 4 (clock-gated, never power-gated). *)
+let locked = [ "disp_cpu"; "dispext0_cpu"; "dispext1_cpu" ]
+let min_state = [ ("disp_fe", 4) ]
+
+(* The GPU's PMGR block (gpx, afr, gfx) is left out until there is a GPU
+   driver. Powering afr on at probe raised an SError on J614s, and Asahi's
+   trees for t8132, t6031 and t8122 do not describe the GPU PMGR either. *)
+let gpu_block = 0x288e80000
+
 (* Labels of the pmgr nodes in t6041.dtsi, which the generated file fills. *)
 let block_labels =
   [ (0x288e80000, "pmgr_gfx"); (0x502280000, "pmgr"); (0x502800000, "pmgr1"); (0x508300000, "pmgr_mini") ]
@@ -92,7 +126,7 @@ let block_labels =
 let dtsi ?(compat = "t6040") ds =
   let by_id = Hashtbl.create 256 in
   List.iter (fun d -> Hashtbl.replace by_id d.id d) ds;
-  let ds = List.filter (fun d -> not (is_cpu_domain d)) ds in
+  let ds = List.filter (fun d -> not (is_cpu_domain d) && d.base <> gpu_block) ds in
   let b = Buffer.create 65536 in
   let p fmt = Printf.bprintf b fmt in
   p "// SPDX-License-Identifier: GPL-2.0+ OR MIT\n";
@@ -124,7 +158,13 @@ let dtsi ?(compat = "t6040") ds =
                  p "\t\tpower-domains = %s;\n"
                    (String.concat ", " (List.map (fun q -> "<&ps_" ^ q.name ^ ">") ps)));
              p "\t\t#reset-cells = <0>;\n";
-             if d.critical then p "\t\tapple,always-on;\n";
+             (match List.assoc_opt d.name min_state with
+             | Some st -> p "\t\tapple,min-state = <%d>;\n" st
+             | None -> ());
+             (match List.assoc_opt d.name must_stay_on with
+             | Some why when not d.critical -> p "\t\tapple,always-on; /* %s */\n" why
+             | _ -> if d.critical && not (List.mem d.name not_always_on) then p "\t\tapple,always-on;\n");
+             if List.mem d.name locked then p "\n\t\tstatus = \"disabled\"; /* Locked, don't touch */\n";
              p "\t};\n");
       p "};\n")
     blocks;
