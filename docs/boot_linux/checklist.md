@@ -64,7 +64,7 @@ Each item has a check that marks it done. Items are ticked only after the check 
 
 ## E. Internal SSD
 
-- [x] **17. NVMe.** ANS, its mailbox and SART in t6041.dtsi; mainline 0x304bc392 "nvme: apple: add t8132 (M4) ANS2 NVMe support".
+- [x] **17. NVMe.** ANS, its mailbox and SART in t6041.dtsi; mainline 304bc392 "nvme: apple: add t8132 (M4) ANS2 NVMe support".
   Check: `nvme0n1` with its partitions, reads without errors.
   Result: `APPLE SSD AP0512Z`, GPT with p1 p2 p3, 2.3 GB/s sequential read. As on other M4-generation chips (the ADT has `nvme-secure-bar`), the controller must be driven through ADT `/arm-io/ans` reg 9 (0x44dcc0000): through reg 3 the linear-SQ register at 0x24908 raised an SError (m1n1 543667fe does the same).
 - [ ] **18. Install to disk.** Free space next to the macOS container, an EFI partition and a NixOS root, booted by m1n1 from `macostest` without the host.
