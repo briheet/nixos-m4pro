@@ -2,6 +2,7 @@ let usage () =
   prerr_endline "usage: nixos-m4pro            run the boot sequence on the loopback";
   prerr_endline "       nixos-m4pro probe [DEV] read-only probe of the live board through m1n1";
   prerr_endline "       nixos-m4pro power-aic [DEV]  power the pms and aic domains (writes; no-op if already on)";
+  prerr_endline "       nixos-m4pro disable-wdt [DEV] disable both watchdogs (writes; no-op if already off)";
   prerr_endline "                               DEV defaults to $M1N1DEVICE, then the debug USB channel";
   exit 2
 
@@ -12,4 +13,6 @@ let () =
   | [ _; "probe"; device ] -> ignore (Nixos_m4pro.Probe.run ~device ())
   | [ _; "power-aic" ] -> ignore (Nixos_m4pro.Live.run_power_aic ())
   | [ _; "power-aic"; device ] -> ignore (Nixos_m4pro.Live.run_power_aic ~device ())
+  | [ _; "disable-wdt" ] -> ignore (Nixos_m4pro.Live.run_disable_wdt ())
+  | [ _; "disable-wdt"; device ] -> ignore (Nixos_m4pro.Live.run_disable_wdt ~device ())
   | _ -> usage ()

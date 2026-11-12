@@ -724,4 +724,16 @@ let () =
     [ Pmgr.ps_pms; Pmgr.ps_aic ];
   let steps = Live.power_aic transport in
   check "live no-op" (List.for_all (fun (s : Live.step) -> s.before = s.after && s.after = 0xffL) steps);
+
+  (* Live.disable_wdt refuses an armed watchdog and is a no-op on a
+     disabled one. *)
+  Proxy.write32 transport (Wdt.reg Wdt.ctl) Wdt.reboot_ctl;
+  (try
+     ignore (Live.disable_wdt transport);
+     fail "disable_wdt changed an armed watchdog"
+   with Failure message -> check "wdt refuses" (String.ends_with ~suffix:"refusing to change it" message));
+  check "wdt left armed" (Proxy.read32 transport (Wdt.reg Wdt.ctl) = Wdt.reboot_ctl);
+  Proxy.write32 transport (Wdt.reg Wdt.ctl) 0L;
+  let steps = Live.disable_wdt transport in
+  check "wdt no-op" (List.for_all (fun (s : Live.step) -> s.before = 0L && s.after = 0L) steps);
   print_endline "ok"
