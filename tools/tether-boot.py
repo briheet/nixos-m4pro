@@ -67,6 +67,19 @@ def chunked_writemem(self, addr, data, progress=False):
             last = now
 
 
+def pad_input(data):
+    """Host-to-target bytes on debug USB arrive only in whole blocks: a short
+    tail waits for the next write (a 23-byte line lost its last 3 bytes; a
+    64-byte line arrives whole). Pad every write to a multiple of 64 with
+    spaces placed before a trailing newline, which a shell ignores."""
+    pad = -len(data) % 64
+    if not pad:
+        return data
+    if data.endswith(b"\n"):
+        return data[:-1] + b" " * pad + b"\n"
+    return data + b" " * pad
+
+
 def relay(self, dev=None):
     dev = dev or self.dev
     dev.timeout = 0
@@ -89,7 +102,7 @@ def relay(self, dev=None):
                     sys.stdout.buffer.write(data)
                     sys.stdout.flush()
             if fifo in ready:
-                data = os.read(fifo, 4096)
+                data = pad_input(os.read(fifo, 4096))
                 for off in range(0, len(data), 64):
                     dev.write(data[off:off + 64])
                     time.sleep(0.01)

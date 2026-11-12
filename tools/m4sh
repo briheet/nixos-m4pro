@@ -1,0 +1,11 @@
+#!/bin/sh
+# Run one command on the M4 Pro's shell through tools/tether-boot.py's relay
+# and print its output.
+#   tools/m4sh "uname -a" [seconds to wait, default 3]
+cd "$(dirname "$0")/.." || exit 1
+n=$(date +%s)$$
+before=$(wc -c < build/console.log)
+printf 'echo @@B%s; %s; echo @@E%s\n' "$n" "$1" "$n" > build/console.in
+perl -e "select(undef,undef,undef,${2:-3})"
+tail -c +$((before + 1)) build/console.log | tr -d '\r' |
+  awk -v b="@@B$n" -v e="@@E$n" '$0 == b { on = 1; next } $0 == e { on = 0 } on'

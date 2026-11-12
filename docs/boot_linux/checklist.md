@@ -33,19 +33,23 @@ Each item has a check that marks it done. Items are ticked only after the check 
 
 ## C. First boot
 
-- [ ] **8. Kernel banner.** Open: `kboot_boot` runs m1n1's `dapf_init_all()`, and the `dart-pmp` DAPF at `0x500578000` raises an SError, so m1n1 reboots before the jump. `tools/tether-boot.py` now hides that node from DAPF init. uart0 is not reachable from the host, so the console is a new polled driver for the dockchannel UART (`ttyDC0`, `kernel/src/apple-dockchannel-uart.c`).
-  Original item: Command line: `earlycon console=ttyDC0 rdinit=/init maxcpus=1 cpuidle.off=1 clk_ignore_unused pd_ignore_unused`.
+- [x] **8. Kernel banner.** Command line: `earlycon console=ttyDC0 rdinit=/init maxcpus=1 cpuidle.off=1 clk_ignore_unused pd_ignore_unused`.
   Check: `Linux version` appears on the debug USB console.
-- [ ] **9. Interrupts and timer.** AIC v3 probes and the timer ticks.
+  Result: `Linux version 7.2.15-m4pro`, `Machine model: Apple MacBook Pro (14-inch, M4 Pro, 2024)`, `earlycon: dockchannel0 at MMIO 0x50882c000`. Two things were in the way. uart0 is not routed to the host, so the console is a new polled driver for the dockchannel UART (`ttyDC0`). m1n1's `kboot_boot` programs the `dart-pmp` DAPF at `0x500578000`, which raises an SError on this chip; `tools/tether-boot.py` renames that node in m1n1's in-memory ADT so DAPF init skips it. Full log: `first-boot.log`.
+- [x] **9. Interrupts and timer.** AIC v3 probes and the timer ticks.
   Check: `/proc/interrupts` counts rise, `sleep 1` returns after a second.
-- [ ] **10. Console input.** Characters typed on the host reach the shell.
+  Result: `irq_apple_aic: Initialized with 2720/4096 IRQs * 1/2 die(s), 7 FIQs, 32 vIPIs`; `arch_timer: cp15 timer running at 1000.00MHz`. `time sleep 1` is `real 0m 1.00s`, and the `arch_timer` count rose from 14362 to 14468 across it.
+- [x] **10. Console input.** Characters typed on the host reach the shell.
   Check: a `#` prompt that runs what is typed.
-- [ ] **11. Basic commands.** `uname -a`, `ls /`, `cat /proc/cpuinfo`, `cat /proc/meminfo` (about 24 GB), `cat /proc/interrupts`, `cat /proc/device-tree/model`, `dmesg`, `date`, `mount`, `df`, `ps`, `free`, `top`.
+  Result: `echo CLEAN-OK-$((6*7))` printed `CLEAN-OK-42`. Host-to-target bytes on debug USB arrive in whole blocks, so the relay pads each write to 64 bytes with spaces before the newline. `tools/m4sh "cmd"` runs a command and prints its output.
+- [x] **11. Basic commands.** `uname -a`, `ls /`, `cat /proc/cpuinfo`, `cat /proc/meminfo` (about 24 GB), `cat /proc/interrupts`, `cat /proc/device-tree/model`, `dmesg`, `date`, `mount`, `df`, `ps`, `free`, `top`.
   Check: each runs and gives a sane answer; output recorded here.
+  Result: all run. `uname -a`: `Linux (none) 7.2.15-m4pro ... aarch64`. `/proc/meminfo`: `MemTotal: 24226848 kB`. `/proc/cpuinfo`: implementer `0x61`, part `0x055`, SME and SME2 listed. `mount` and `df -h`: proc, sysfs, devtmpfs, devpts, tmpfs. `ps`/`top`: 83 tasks, 100% idle. `date` is 1970: no RTC driver yet (SMC/SPMI). Errors in the log are cpufreq without cluster info in the DT, the keyboard backlight PWM period, and drivers for other boards in defconfig.
 - [ ] **12. All 12 cores.** Drop `maxcpus=1`.
   Check: `nproc` is 12 and `/proc/cpuinfo` shows both core types.
 - [ ] **13. Stability.** The watchdog does not reset the machine, an hour idle with no hang, `reboot` restarts it.
   Check: uptime past an hour; `reboot` comes back to m1n1.
+  So far: `watchdog0` registered and the machine stayed up 168 s with no reset; `reboot -f` printed `reboot: Restarting system` and the machine restarted. The hour is not done yet.
 - [ ] **14. Screen console.** m1n1's framebuffer handed to Linux as `simple-framebuffer`, with the framebuffer console on it.
   Check: the boot log is on the internal panel.
 
