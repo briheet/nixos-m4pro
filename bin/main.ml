@@ -4,6 +4,7 @@ let usage () =
   prerr_endline "       nixos-m4pro power-aic [DEV]  power the pms and aic domains (writes; no-op if already on)";
   prerr_endline "       nixos-m4pro disable-wdt [DEV] disable both watchdogs (writes; no-op if already off)";
   prerr_endline "       nixos-m4pro aic-init [DEV]    route aic-ext-intr-cfg IRQs (writes; m1n1 did the same at boot)";
+  prerr_endline "       nixos-m4pro power-apcie0 [DEV] power the apcie0 domains, parents first (writes)";
   prerr_endline "                               DEV defaults to $M1N1DEVICE, then the debug USB channel";
   exit 2
 
@@ -18,4 +19,6 @@ let () =
   | [ _; "disable-wdt"; device ] -> ignore (Nixos_m4pro.Live.run_disable_wdt ~device ())
   | [ _; "aic-init" ] -> ignore (Nixos_m4pro.Live.run_aic_init ())
   | [ _; "aic-init"; device ] -> ignore (Nixos_m4pro.Live.run_aic_init ~device ())
+  | [ _; "power-apcie0" ] -> ignore (Nixos_m4pro.Live.run_power_apcie0 ())
+  | [ _; "power-apcie0"; device ] -> ignore (Nixos_m4pro.Live.run_power_apcie0 ~device ())
   | _ -> usage ()

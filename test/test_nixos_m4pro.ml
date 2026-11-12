@@ -688,6 +688,23 @@ let () =
      ignore (Proxy.call (Serial.transport serial) Proxy.p_get_chipid []);
      fail "serial read without a reply should time out"
    with Serial.Timeout _ -> ());
+  (* A line that never goes quiet but never carries a reply still times out. *)
+  let chatter = Thread.create (fun () ->
+      let stop = Unix.gettimeofday () +. 3.0 in
+      try
+        while Unix.gettimeofday () < stop do
+          ignore (Unix.write_substring far "TTY spam\n" 0 9);
+          Thread.delay 0.05
+        done
+      with Unix.Unix_error _ -> ()) ()
+  in
+  let started = Unix.gettimeofday () in
+  (try
+     ignore (Proxy.call (Serial.transport serial) Proxy.p_get_chipid []);
+     fail "serial read with only console text should time out"
+   with Serial.Timeout _ -> ());
+  check "serial overall deadline" (Unix.gettimeofday () -. started < 2.0);
+  Thread.join chatter;
   Unix.close far;
   Serial.close serial;
 
@@ -747,6 +764,35 @@ let () =
     (match cfg_steps with
     | [ s ] -> s.irq = 0x1ad && s.addr = 0x5024106b4L && s.cfg_before = 0xa0L && s.cfg_after = 0xa3L
     | _ -> false);
+  (* Pmgr.apcie0_power is parents first, and Live.power_apcie0 powers only
+     what is off. *)
+  let position id =
+    let rec go i = function
+      | [] -> fail (Printf.sprintf "pmgr id %d missing" id)
+      | (ps : Pmgr.ps) :: rest -> if ps.id = id then i else go (i + 1) rest
+    in
+    go 0 Pmgr.apcie0_power
+  in
+  check "apcie0 parents first"
+    (List.for_all
+       (fun (ps : Pmgr.ps) -> List.for_all (fun par -> position par < position ps.id) ps.parents)
+       Pmgr.apcie0_power);
+  check "apcie0 gates listed" (List.for_all (fun id -> position id >= 0) Pmgr.apcie0_clock_gates);
+  Proxy.write32 transport 0x502280100L 0xffL;
+  let masked = ref [] in
+  let tracking request =
+    if Proxy.get_u64 request 0 = Proxy.p_mask32 then masked := Proxy.get_u64 request 8 :: !masked;
+    transport request
+  in
+  let ps_steps = Live.power_apcie0 tracking in
+  check "apcie0 all active"
+    (List.for_all (fun (s : Live.ps_step) -> Live.actual s.ps_after = Pmgr.ps_active) ps_steps);
+  check "apcie0 skips active" (not (List.mem 0x502280100L !masked));
+  check "apcie0 write order"
+    (List.rev !masked
+    = List.filter_map
+        (fun (ps : Pmgr.ps) -> if ps.addr = 0x502280100L then None else Some ps.addr)
+        Pmgr.apcie0_power);
   let _, again = Live.aic_init transport in
   check "aic init repeat is a no-op"
     (List.for_all (fun (s : Live.cfg_step) -> s.cfg_before = 0xa3L && s.cfg_after = 0xa3L) again);

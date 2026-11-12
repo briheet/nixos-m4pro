@@ -19,6 +19,7 @@ type t = {
   buf : Bytes.t;
   mutable pos : int;
   mutable len : int;
+  mutable deadline : float;
 }
 
 let event_header_len = 8
@@ -63,7 +64,7 @@ let raw_mode fd baud =
 
 (* Any connected descriptor works. Tests use one end of a socketpair. *)
 let of_fd ?(path = "fd") ?(timeout = 3.0) ?(console = fun _ -> ()) fd =
-  { fd; path; timeout; console; buf = Bytes.create 4096; pos = 0; len = 0 }
+  { fd; path; timeout; console; buf = Bytes.create 4096; pos = 0; len = 0; deadline = infinity }
 
 let open_device ?(baud = Wire.baud) ?(timeout = 3.0) ?(console = fun _ -> ()) path =
   let fd =
@@ -89,8 +90,14 @@ let rec write_all t bytes off len =
     let n = Unix.write t.fd bytes off len in
     write_all t bytes (off + n) (len - n)
 
+(* [timeout] bounds the whole wait for one reply, not only silence on the
+   line. A wedged m1n1 that keeps printing an exception dump would
+   otherwise hold the reader forever. *)
 let rec fill t =
-  match Unix.select [ t.fd ] [] [] t.timeout with
+  let now = Unix.gettimeofday () in
+  if now >= t.deadline then
+    raise (Timeout (Printf.sprintf "no reply from %s within %.1fs" t.path t.timeout));
+  match Unix.select [ t.fd ] [] [] (Float.min t.timeout (t.deadline -. now)) with
   | [], _, _ ->
       raise (Timeout (Printf.sprintf "no data from %s within %.1fs" t.path t.timeout))
   | _ -> (
@@ -165,7 +172,10 @@ let rec receive t ~cmd =
 let peer t : Wire.peer =
  fun frame ->
   write_all t frame 0 (Bytes.length frame);
-  receive t ~cmd:(Wire.get_u32 frame 0)
+  t.deadline <- Unix.gettimeofday () +. t.timeout;
+  Fun.protect
+    ~finally:(fun () -> t.deadline <- infinity)
+    (fun () -> receive t ~cmd:(Wire.get_u32 frame 0))
 
 (* REQ_NOP with no feature bits. m1n1 answers with the features it enabled,
    which is none when none are asked for. *)

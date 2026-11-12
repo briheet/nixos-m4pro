@@ -105,7 +105,8 @@ let read32 t addr =
 
 let in_pmgr addr =
   let limit = Int64.add Pmgr.base Pmgr.size in
-  Int64.unsigned_compare addr Pmgr.base >= 0 && Int64.unsigned_compare addr limit < 0
+  (Int64.unsigned_compare addr Pmgr.base >= 0 && Int64.unsigned_compare addr limit < 0)
+  || List.exists (fun (ps : Pmgr.ps) -> ps.addr = addr) Pmgr.apcie0_power
 
 (* pmgr_set_mode polls PMGR_PS_ACTUAL. The silicon copies the target into
    that field once the transition finishes. The loopback does it on the write. *)

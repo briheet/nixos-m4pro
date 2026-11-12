@@ -134,6 +134,35 @@ let aic_init transport =
   in
   (layout, steps)
 
+(* Power /arm-io/apcie0 the way m1n1 does before PCIe init. Every domain is
+   read before anything is written, and the step stops on the first read
+   that faults. Domains already active are left alone. The rest go to
+   active in Pmgr.apcie0_power order, parents first. *)
+type ps_step = {
+  ps : Pmgr.ps;
+  ps_before : int64;
+  ps_after : int64;
+}
+
+let power_apcie0 transport =
+  let read_ps (ps : Pmgr.ps) =
+    match Probe.read transport ps.addr with
+    | None -> failwith (Printf.sprintf "pmgr %s at %#Lx faulted" ps.ps_name ps.addr)
+    | Some v -> v
+  in
+  let before = List.map read_ps Pmgr.apcie0_power in
+  let pmgr = { Pmgr.read32 = Probe.read_or_raise transport; mask32 = mask_checked transport } in
+  List.iter2
+    (fun (ps : Pmgr.ps) v -> if actual v <> Pmgr.ps_active then Pmgr.set_mode pmgr ps.addr Pmgr.ps_active)
+    Pmgr.apcie0_power before;
+  let after = List.map read_ps Pmgr.apcie0_power in
+  let chip = Proxy.call transport Proxy.p_get_chipid [] in
+  if chip <> Probe.expected_chip_id then
+    failwith (Printf.sprintf "chip id after the write is %#Lx" chip);
+  List.map2
+    (fun ps (b, a) -> { ps; ps_before = b; ps_after = a })
+    Pmgr.apcie0_power (List.combine before after)
+
 let with_device ?device f =
   let device = match device with Some d -> d | None -> Wire.device () in
   let serial = Serial.open_device ~console:(Probe.console_printer ()) device in
@@ -165,6 +194,18 @@ let run_aic_init ?device () =
           Printf.printf "aic irq %#x cfg %#Lx before %#010Lx after %#010Lx target %d%s\n" s.irq s.addr
             s.cfg_before s.cfg_after s.target
             (if s.cfg_before = s.cfg_after then "  (unchanged)" else "  (CHANGED)"))
+        steps;
+      Printf.printf "m1n1 still answers, chip id %#Lx\n" Probe.expected_chip_id;
+      steps)
+
+let run_power_apcie0 ?device () =
+  with_device ?device (fun transport ->
+      let steps = power_apcie0 transport in
+      List.iter
+        (fun s ->
+          Printf.printf "pmgr %-13s %#Lx before %#010Lx after %#010Lx  (%s)%s\n" s.ps.ps_name s.ps.addr
+            s.ps_before s.ps_after (Probe.pmgr_state s.ps_after)
+            (if actual s.ps_before = Pmgr.ps_active then "" else "  POWERED ON"))
         steps;
       Printf.printf "m1n1 still answers, chip id %#Lx\n" Probe.expected_chip_id;
       steps)

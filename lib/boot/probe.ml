@@ -5,7 +5,13 @@
    reads under GUARD_MARK (src/proxy.c), so a read that faults returns
    0xacce5515abad1dea and bumps exc_count instead of taking m1n1 down. The
    first P_GET_EXC_COUNT clears the counter and the second says whether this
-   read faulted. Drivers get a [Soc] record whose write and mask functions
+   read faulted.
+
+   That guard covers synchronous aborts only. A read of a power-gated block
+   on this Mac comes back as an SError instead: reading PROTECT on
+   dart-apcie0 (0x410000200) on 2026-11-12 left m1n1 printing the same
+   exception dump in a loop and answering nothing until the target was
+   rebooted. Only probe blocks whose power domain is known to be on. Drivers get a [Soc] record whose write and mask functions
    raise, so a probe that reached for one would stop before touching the
    board. *)
 

@@ -64,3 +64,33 @@ let set_mode t addr mode =
 let power_aic t =
   set_mode t (at ps_pms.offset) ps_active;
   set_mode t (at ps_aic.offset) ps_active
+
+(* Power for /arm-io/apcie0, read from this Mac's device tree through m1n1
+   on 2026-11-12. apcie0's clock-gates are 240 162 244 163 242 164 243 245;
+   with their parents that is the ten below. Addresses are absolute, since
+   all but AFC sit in a second PMGR window at 0x502280000. The list is in
+   dependency order, parents before children, which is the order
+   pmgr_adt_power_enable("/arm-io/apcie0") in m1n1 turns them on.
+   dart-apcie0 has no clock-gates of its own and is behind these. *)
+type ps = {
+  id : int;
+  ps_name : string;
+  addr : int64;
+  parents : int list;
+}
+
+let apcie0_power =
+  [
+    { id = 35; ps_name = "AFC"; addr = 0x502800178L; parents = [] };
+    { id = 165; ps_name = "FAB3_SOC"; addr = 0x502280118L; parents = [ 35 ] };
+    { id = 162; ps_name = "APCIE_GP"; addr = 0x502280100L; parents = [] };
+    { id = 163; ps_name = "APCIE_ST0"; addr = 0x502280108L; parents = [] };
+    { id = 164; ps_name = "APCIE_ST1"; addr = 0x502280110L; parents = [] };
+    { id = 240; ps_name = "ANS"; addr = 0x502280370L; parents = [ 165 ] };
+    { id = 244; ps_name = "APCIE_SYS_GP"; addr = 0x502280390L; parents = [ 165; 162 ] };
+    { id = 242; ps_name = "APCIE_SYS_ST0"; addr = 0x502280380L; parents = [ 240; 163 ] };
+    { id = 243; ps_name = "APCIE_SYS_ST1"; addr = 0x502280388L; parents = [ 240; 164 ] };
+    { id = 245; ps_name = "APCIE_PHY_SW"; addr = 0x502280398L; parents = [ 242; 243 ] };
+  ]
+
+let apcie0_clock_gates = [ 240; 162; 244; 163; 242; 164; 243; 245 ]
