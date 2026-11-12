@@ -1,0 +1,18 @@
+#!/bin/sh
+# Wait up to N seconds (default 420) for the M4 Pro to drop off debug USB,
+# then print how the current run ended or the last uptime seen.
+#   tools/m4wait [seconds]
+cd "$(dirname "$0")/.." || exit 1
+DEV=/dev/cu.kis-100000-ch-0
+limit=${1:-420}
+start=$(date +%s)
+while [ -e "$DEV" ] && [ $(( $(date +%s) - start )) -lt "$limit" ]; do
+  perl -e 'select(undef,undef,undef,5)'
+done
+if [ -e "$DEV" ]; then
+  echo "m4wait: still up after $limit s; last: $(grep -a '^MON' build/console.log | tail -n 1)"
+else
+  perl -e 'select(undef,undef,undef,3)'
+  echo "m4wait: target went away at $(date +%H:%M:%S)"
+  cat build/current/result.txt 2>/dev/null
+fi

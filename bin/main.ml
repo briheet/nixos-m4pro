@@ -5,6 +5,8 @@ let usage () =
   prerr_endline "       nixos-m4pro disable-wdt [DEV] disable both watchdogs (writes; no-op if already off)";
   prerr_endline "       nixos-m4pro aic-init [DEV]    route aic-ext-intr-cfg IRQs (writes; m1n1 did the same at boot)";
   prerr_endline "       nixos-m4pro power-apcie0 [DEV] power the apcie0 domains, parents first (writes)";
+  prerr_endline "       nixos-m4pro pmgr-list ADT     power domains in an Apple device tree dump";
+  prerr_endline "       nixos-m4pro pmgr-dtsi ADT     the kernel's pmgr .dtsi for this machine";
   prerr_endline "                               DEV defaults to $M1N1DEVICE, then the debug USB channel";
   exit 2
 
@@ -21,4 +23,26 @@ let () =
   | [ _; "aic-init"; device ] -> ignore (Nixos_m4pro.Live.run_aic_init ~device ())
   | [ _; "power-apcie0" ] -> ignore (Nixos_m4pro.Live.run_power_apcie0 ())
   | [ _; "power-apcie0"; device ] -> ignore (Nixos_m4pro.Live.run_power_apcie0 ~device ())
+  | [ _; "adt-props"; adt; path ] ->
+      let root = Nixos_m4pro.Adt.of_file adt in
+      let n = Nixos_m4pro.Adt.node_at root path in
+      List.iter
+        (fun (k, v) ->
+          let shown =
+            if String.length v <= 64 && String.for_all (fun c -> c = '\000' || (c >= ' ' && c <= '~')) v
+            then Printf.sprintf "%S" (Nixos_m4pro.Adt.cstring v)
+            else String.concat " " (List.init (min 16 (String.length v)) (fun i -> Printf.sprintf "%02x" (Char.code v.[i])))
+          in
+          Printf.printf "%-28s %6d  %s\n" k (String.length v) shown)
+        n.props;
+      Printf.printf "children: %s\n" (String.concat " " (List.map (fun (c : Nixos_m4pro.Adt.node) -> c.name) n.children))
+  | [ _; "pmgr-dtsi"; adt ] ->
+      print_string (Nixos_m4pro.Pmgr_adt.dtsi (Nixos_m4pro.Pmgr_adt.domains (Nixos_m4pro.Adt.of_file adt)))
+  | [ _; "pmgr-list"; adt ] ->
+      List.iter
+        (fun (d : Nixos_m4pro.Pmgr_adt.domain) ->
+          Printf.printf "%4d %-20s %#x+%#05x%s parents=[%s]\n" d.id d.name d.base d.offset
+            (if d.critical then " always-on" else "")
+            (String.concat "," (List.map string_of_int d.parents)))
+        (Nixos_m4pro.Pmgr_adt.domains (Nixos_m4pro.Adt.of_file adt))
   | _ -> usage ()

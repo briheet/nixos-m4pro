@@ -1,0 +1,58 @@
+#!/bin/sh
+# One boot cycle on the M4 Pro, from the host. docs/boot_linux/checklist.md.
+#
+#   tools/m4run "<extra boot args>" [Image.gz dtb initramfs]
+#
+# 1. If the debug USB channel is missing, switch the target to debug USB
+#    (needs the passwordless macvdmtool rule).
+# 2. Wait until m1n1 answers (nixos-m4pro probe).
+# 3. Start tools/tether-boot.py in the background; it records the run under
+#    build/runs/<time>/ and build/current.
+# 4. Wait for the initramfs banner, then start the uptime monitor.
+#
+# The base boot args are always passed; "<extra boot args>" is appended.
+set -u
+cd "$(dirname "$0")/.." || exit 1
+BASE="earlycon console=tty0 console=ttyDC0 rdinit=/init cpuidle.off=1 clk_ignore_unused pd_ignore_unused loglevel=8 ignore_loglevel"
+EXTRA=${1:-}
+KERNEL=${2:-build/Image.gz}
+DTB=${3:-build/t6040-j614s.dtb}
+INITRD=${4:-build/initramfs.cpio.gz}
+DEV=/dev/cu.kis-100000-ch-0
+VDM=/Users/briheet/code/macvdmtool/macvdmtool
+
+wait_port() {
+  i=0
+  while [ ! -e "$DEV" ] && [ $i -lt 15 ]; do perl -e 'select(undef,undef,undef,1)'; i=$((i + 1)); done
+  [ -e "$DEV" ]
+}
+
+if ! wait_port; then
+  echo "m4run: no $DEV, switching the target to debug USB"
+  sudo -n "$VDM" debugusb | tail -n 1
+  wait_port || { echo "m4run: $DEV did not appear"; exit 1; }
+fi
+
+ok=
+for i in 1 2 3 4 5; do
+  if perl -e 'alarm 12; exec @ARGV' dune exec -- nixos-m4pro probe 2>&1 | grep -q "chip id 0x6040"; then
+    ok=1; break
+  fi
+  perl -e 'select(undef,undef,undef,3)'
+done
+[ -n "$ok" ] || { echo "m4run: m1n1 is not answering"; exit 1; }
+echo "m4run: m1n1 answers"
+
+: > build/console.log
+M1N1DEVICE=$DEV PYTHONUNBUFFERED=1 nohup .venv-m1n1/bin/python tools/tether-boot.py \
+  "$KERNEL" "$DTB" "$INITRD" -b "$BASE $EXTRA" > build/tether.out 2>&1 &
+echo "m4run: booting, pid $!"
+
+i=0
+until grep -q -a "nixos-m4pro initramfs" build/console.log 2>/dev/null; do
+  if ! kill -0 $! 2>/dev/null; then echo "m4run: tether-boot exited:"; tail -n 5 build/tether.out; exit 1; fi
+  i=$((i + 1)); [ $i -lt 150 ] || { echo "m4run: no shell after 300 s"; exit 1; }
+  perl -e 'select(undef,undef,undef,2)'
+done
+echo "m4run: shell up, run $(readlink build/current)"
+tools/m4sh --monitor 15 > /dev/null

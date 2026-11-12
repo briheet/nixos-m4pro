@@ -2,4 +2,4 @@
 (library
  (name soc)
  (wrapped true)
- (libraries proto))
+ (libraries proto adt))

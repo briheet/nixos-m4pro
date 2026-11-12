@@ -1,11 +1,23 @@
 #!/bin/sh
 # Run one command on the M4 Pro's shell through tools/tether-boot.py's relay
-# and print its output.
+# and print its output. The command and its output are appended to the
+# current run's commands.log (build/current/commands.log).
 #   tools/m4sh "uname -a" [seconds to wait, default 3]
+#   tools/m4sh --monitor [seconds]   start an uptime line on the console
 cd "$(dirname "$0")/.." || exit 1
+if [ "$1" = "--monitor" ]; then
+  set -- "( (while true; do echo \"MON up=\$(cut -d' ' -f1 /proc/uptime)\"; sleep ${2:-15}; done) > /dev/console 2>&1 & )" 2
+fi
 n=$(date +%s)$$
 before=$(wc -c < build/console.log)
 printf 'echo @@B%s; %s; echo @@E%s\n' "$n" "$1" "$n" > build/console.in
 perl -e "select(undef,undef,undef,${2:-3})"
-tail -c +$((before + 1)) build/console.log | tr -d '\r' |
-  awk -v b="@@B$n" -v e="@@E$n" '$0 == b { on = 1; next } $0 == e { on = 0 } on'
+out=$(tail -c +$((before + 1)) build/console.log | tr -d '\r' |
+  awk -v b="@@B$n" -v e="@@E$n" '$0 == b { on = 1; next } $0 == e { on = 0 } on')
+printf '%s\n' "$out"
+if [ -d build/current ]; then
+  {
+    printf '%s $ %s\n' "$(date +%H:%M:%S)" "$1"
+    printf '%s\n\n' "$out"
+  } >> build/current/commands.log
+fi

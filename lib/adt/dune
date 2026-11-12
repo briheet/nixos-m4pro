@@ -1,0 +1,4 @@
+; Apple device tree (ADT) parser and address translation.
+(library
+ (name adt)
+ (wrapped false))
