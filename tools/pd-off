@@ -1,0 +1,25 @@
+#!/bin/sh
+# Power off PMGR domains on the running M4 Pro from its shell, the way
+# apple_pmgr_ps_set does (clear AUTO_ENABLE, the WAS_* flags and the
+# target; target 0 is PWRGATE), then check the machine still answers.
+#   tools/pd-off name [name ...]
+# Names are looked up in build/pmgr-list.txt (nixos-m4pro pmgr-list) and
+# processed in the order given; give children before parents. One short
+# command per domain: long lines overrun the target's receive FIFO (there
+# is no flow control on debug USB) and get cut. Results are appended to
+# build/pd-results.txt.
+cd "$(dirname "$0")/.." || exit 1
+for n in "$@"; do
+  a=$(awk -v n="$n" '$2 == n { split($3, p, "+"); printf "0x%x", strtonum(p[1]) + strtonum(p[2]) }' build/pmgr-list.txt)
+  [ -n "$a" ] || { echo "pd-off: unknown domain $n"; exit 2; }
+  r=$(tools/m4sh "v=\$(devmem $a 32); devmem $a 32 \$(( v & ~0x1000030F )); devmem $a 32" 1)
+  [ -n "$r" ] || { echo "$(date +%H:%M:%S) alive=no after $n" | tee -a build/pd-results.txt; exit 1; }
+done
+alive=yes
+for i in 1 2 3; do
+  perl -e 'select(undef,undef,undef,5)'
+  out=$(tools/m4sh 'cat /proc/uptime' 3)
+  [ -n "$out" ] || { alive=no; break; }
+done
+echo "$(date +%H:%M:%S) alive=$alive $*" | tee -a build/pd-results.txt
+[ "$alive" = yes ]

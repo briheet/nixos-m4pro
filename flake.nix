@@ -39,6 +39,12 @@
         }
       );
 
+      # NixOS from RAM on the J614s, booted from the host through m1n1.
+      #   nix build .#nixosConfigurations.m4pro-ram.config.system.build.netboot
+      nixosConfigurations.m4pro-ram = nixpkgs.lib.nixosSystem {
+        modules = [ ./nixos/ram.nix ];
+      };
+
       devShells = each (pkgs: {
         default = pkgs.mkShell {
           inputsFrom = [ self.packages.${pkgs.stdenv.hostPlatform.system}.default ];
