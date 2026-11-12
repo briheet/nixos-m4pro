@@ -1,0 +1,56 @@
+From 297c311053a5cfedf30928bf0303ee5cd856c894 Mon Sep 17 00:00:00 2001
+From: nixos-m4pro <local@local>
+Date: Fri, 13 Nov 2026 02:01:41 +0530
+Subject: [PATCH 1/3] dapf: Take the DAPF reg from the ADT instance list
+
+Newer ADTs tag each reg entry of a DART in its "instance" property:
+16 bytes per entry, a byte-reversed FourCC (TRAD for the DART, FPAD for
+the DAPF, FPAG for PS_PROT) and a name. Use the DAPF entry it names
+instead of a fixed index, and skip DARTs that have none.
+
+On T6040 dart-pmp is DART + PS_PROT. Programming its second reg as a DAPF
+raised an SError in kboot_boot and m1n1 rebooted the machine.
+---
+ src/dapf.c | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/src/dapf.c b/src/dapf.c
+index 13a04986..fc55be44 100644
+--- a/src/dapf.c
++++ b/src/dapf.c
+@@ -139,6 +139,32 @@ int dapf_init(const char *path, int index)
+     if (pwr && (pmgr_adt_power_enable(path) < 0))
+         return -1;
+ 
++    /*
++     * Newer ADTs tag each reg entry in "instance": 16 bytes per entry, a
++     * byte-reversed FourCC ("TRAD" for the DART, "FPAD" for the DAPF,
++     * "FPAG" for PS_PROT) and its name. Use the DAPF entry it names, and
++     * skip DARTs that have none: on T6040 dart-pmp is DART + PS_PROT, and
++     * programming PS_PROT as a DAPF raises an SError.
++     */
++    u32 inst_len;
++    const u8 *inst = adt_getprop(adt, node, "instance", &inst_len);
++    if (inst && inst_len >= 16 && !(inst_len % 16)) {
++        int found = -1;
++        for (int i = 0; i < (int)(inst_len / 16); i++) {
++            if (!memcmp(inst + i * 16, "FPAD", 4)) {
++                found = i;
++                break;
++            }
++        }
++        if (found < 0) {
++            printf("dapf: %s has no DAPF entry, skipping\n", path);
++            if (pwr)
++                pmgr_adt_power_disable(path);
++            return 0;
++        }
++        index = found;
++    }
++
+     u64 base;
+     if (adt_get_reg(adt, dart_path, "reg", index, &base, NULL) < 0) {
+         printf("dapf: Error getting DAPF %s base address.\n", path);
+-- 
+2.56.0
+

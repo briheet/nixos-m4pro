@@ -300,7 +300,12 @@ def skip_mcc_enable_cache(proxy_):
           "so kboot keeps the firmware's memory cache state", flush=True)
 
 
-proxy.M1N1Proxy.kboot_boot = kboot_boot
+# M1N1_WORKAROUNDS=0 turns these off, for an m1n1 that carries the fixes
+# itself (m1n1/patches: DAPF reg from the ADT, both CTRR ranges reserved,
+# firmware MCC state kept on T6040).
+WORKAROUNDS = os.environ.get("M1N1_WORKAROUNDS", "1") != "0"
+if WORKAROUNDS:
+    proxy.M1N1Proxy.kboot_boot = kboot_boot
 
 # Keep the boot args and the utils object where the wrappers can reach them.
 _utils_init = proxyutils.ProxyUtils.__init__
@@ -374,11 +379,16 @@ def kboot_prepare_dt(self, dt_addr):
     return _kboot_prepare_dt(self, new_addr)
 
 
-proxy.M1N1Proxy.kboot_prepare_dt = kboot_prepare_dt
+if WORKAROUNDS:
+    proxy.M1N1Proxy.kboot_prepare_dt = kboot_prepare_dt
+else:
+    print("tether-boot: m1n1 workarounds off (M1N1_WORKAROUNDS=0)", flush=True)
 
 
 proxyutils.ProxyUtils.__init__ = utils_init
 
-linux_py = PROXYCLIENT / "tools/linux.py"
-sys.argv = [str(linux_py)] + sys.argv[1:]
-runpy.run_path(str(linux_py), run_name="__main__")
+# M1N1_TOOL picks another proxyclient tool, e.g. chainload.py to run a new
+# m1n1 build without installing it.
+tool = PROXYCLIENT / "tools" / os.environ.get("M1N1_TOOL", "linux.py")
+sys.argv = [str(tool)] + sys.argv[1:]
+runpy.run_path(str(tool), run_name="__main__")
