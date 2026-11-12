@@ -30,7 +30,16 @@ Bit 0 is enable and bit 63 is lock. m1n1 `cf37927d` reserves the C range from Li
 
 ## Fix
 
-`tools/tether-boot.py` reads the C and D bounds on the boot core (`s3_0_c11_c1_{0,1,2,3}`), pads each to whole 16 KiB pages (upper bound treated as inclusive), and inserts both into the DTB's memreserve block before m1n1's `kboot_prepare_dt`. m1n1 itself is unchanged.
+First a workaround in `tools/tether-boot.py` added the D range to the DTB before `kboot_prepare_dt`. It is replaced by `m1n1/patches/0002-kboot-Reserve-both-CTRR-ranges-left-locked-on-second.patch`: m1n1 reserves every CTRR range itself, treating the upper bound as the last protected page. Installed on `macostest` on 2026-11-13; m1n1 now logs
+
+```
+FDT: reserving CTRR C [0x10006a3c000, 0x10006a48000), locked on secondary cores
+FDT: reserving CTRR D [0x10005db8000, 0x10005ec0000), locked on secondary cores
+```
+
+and every core writes 200 MB with no oops.
+
+The earlier log below is from the workaround.
 
 ```
 tether-boot: reserving CTRR C 0x1000595c000..0x10005968000 (locked on secondary cores)
@@ -46,4 +55,4 @@ tether-boot: reserving CTRR D 0x10004cd8000..0x10004de0000 (locked on secondary 
 - `taskset -c N dd if=/dev/zero of=/tmp/tN bs=1M count=256` for every core: 5.2 to 6.1 GB/s, no fault.
 - 12 parallel `dd` writers filled the 11.6 GB tmpfs. No oops in `dmesg`. Rescheduling and function-call IPIs count on all 12 cores.
 
-The same chip family also needs, on this m1n1, `dart-pmp` hidden from DAPF init and the PMU boot-failure counter reset; both are in `tether-boot.py`. An m1n1 fork for the M4 Pro (aurora-silicon/m1n1 PR #39) fixes the DAPF index and the counter in m1n1 itself.
+The same m1n1 build carries `0001` (DAPF reg from the ADT instance list, so `dart-pmp` is skipped) and `0003` (keep the firmware's MCC cache state on T6040). An m1n1 fork for the M4 Pro (aurora-silicon/m1n1 PR #39) fixes the DAPF index the same way. `chainload.py` cannot be used to try a new m1n1 on this Mac: iBoot locks RVBAR and its RVBAR writes take an SError.
