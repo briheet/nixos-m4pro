@@ -12,6 +12,12 @@ cp "$busybox" "$root/bin/busybox"
 cp /work/initramfs/init "$root/init"
 chmod 755 "$root/init" "$root/bin/busybox"
 ln -s busybox "$root/bin/sh"
+# Firmware extracted from macOS (not in git): build/firmware/apple/*.bin.
+# The kernel's firmware loader reads /lib/firmware.
+if [ -d /work/build/firmware ]; then
+  mkdir -p "$root/lib"
+  cp -r /work/build/firmware "$root/lib/firmware"
+fi
 (cd "$root" && find . | cpio -o -H newc --owner 0:0 2>/dev/null) | gzip -9 > "$out/initramfs.cpio.gz"
 rm -rf "$root"
 ls -l "$out/initramfs.cpio.gz"

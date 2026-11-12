@@ -1,7 +1,7 @@
 From df138647eb0e3d079c49cad3ce8a7f3db775358d Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 20:22:28 +0000
-Subject: [PATCH 6/7] arm64: dts: apple: t6041: Add MTP, its mailbox, DART and
+Subject: [PATCH 6/8] arm64: dts: apple: t6041: Add MTP, its mailbox, DART and
  dockchannel
 
 The internal keyboard and trackpad on M4 Pro/Max laptops sit behind the

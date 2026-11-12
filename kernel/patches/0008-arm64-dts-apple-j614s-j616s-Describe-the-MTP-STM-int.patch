@@ -1,0 +1,44 @@
+From 12dda8fac1d13d20e7b1111f2d005e28d0e38256 Mon Sep 17 00:00:00 2001
+From: nixos-m4pro <local@local>
+Date: Thu, 12 Nov 2026 20:28:34 +0000
+Subject: [PATCH 8/8] arm64: dts: apple: j614s/j616s: Describe the MTP STM
+ interface
+
+The STM interface reports the HID vendor and product IDs. Without it the
+keyboard and trackpad register as 0000:0000 and the Apple trackpad driver
+(hid-magicmouse, which matches SPI_VENDOR_ID_APPLE) does not bind, so the
+trackpad firmware is never sent. Its reset line is an SMC GPIO and is
+added with the SMC driver.
+---
+ arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi b/arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi
+index 0cba2f80a..30afbfdc2 100644
+--- a/arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi
++++ b/arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi
+@@ -87,9 +87,9 @@ &mtp_dockchannel {
+ };
+ 
+ /*
+- * The MTP firmware may ask for the AFE and STM reset lines; they are SMC
++ * The MTP firmware may ask for the AFE and STM reset lines. They are SMC
+  * GPIOs (apple,afe-reset-gpios, apple,stm-reset-gpios on t602x) and are
+- * added with the SMC. The stm node is left out until then.
++ * added with the SMC driver.
+  */
+ &mtp_hid {
+ 	mtp_mt: multi-touch {
+@@ -101,6 +101,9 @@ keyboard: keyboard {
+ 		apple,keyboard-layout-id = <0>;
+ 	};
+ 
++	stm {
++	};
++
+ 	actuator {
+ 	};
+ 
+-- 
+2.47.0
+

@@ -38,3 +38,10 @@ H: Handlers=sysrq kbd leds event1
 
 - Trackpad multitouch: needs `apple/tpmtfw-j614s.bin` extracted from macOS. It registers as a basic mouse without it.
 - AFE/STM reset GPIOs: with the SMC driver.
+
+## Trackpad (2026-11-13, in progress)
+
+- Firmware: `apple/tpmtfw-j614s.bin` (79,960 bytes, `HIDF`) converted with Asahi's `asahi_firmware.multitouch` from `J614s_Multitouch.im4p` in the host Mac's macOS restore bundle (`/System/Volumes/Preboot/*/restore/Firmware/`). It is packed into the initramfs under `/lib/firmware` by `tools/build-initramfs.sh` from `build/firmware/` (not in git).
+- Patch 0008 describes the `stm` interface. With it the devices report `05AC:0359`; the keyboard binds to `hid-apple` and the trackpad to `hid-magicmouse` (`CONFIG_HID_MAGICMOUSE`).
+- Opening the trackpad's event device starts the interface: `Sending firmware for multi-touch`, then the MTP rejects the interface reset (`output report 0x40 to iface 0 (comm) failed with err 0xe00002c2`, kIOReturnBadArgument) and the start times out.
+- The ADT `multi-touch` node has `function-afe-reset`: the AFE reset is an SMC GPIO (on t602x `apple,afe-reset-gpios = <&smc_gpio 25 ...>`). This waits for the SMC driver.

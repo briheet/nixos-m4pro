@@ -1,7 +1,7 @@
 From ae642c7e449a2bf214a8f782a8ca84bd4a034f73 Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 19:31:13 +0000
-Subject: [PATCH 3/7] pmdomain: apple: pmgr: make probe write nothing on T6040
+Subject: [PATCH 3/8] pmdomain: apple: pmgr: make probe write nothing on T6040
  (bring-up)
 
 On the M4 Pro (J614s) the machine resets on its own a few minutes after
