@@ -76,3 +76,14 @@ The `1/2` and `2720/4096` figures are the values read from this Mac, planted int
 A live init has the same requirement as the UART and the watchdog. This Mac has to be booted into m1n1, and the client has to run on a second machine at `/dev/cu.usbmodemP_01`, 115200 baud. This session did not boot the hardware.
 
 This is the bootloader init. A NixOS kernel driver for `aic,3` is still open. The die and IRQ counts still have to be read from the silicon before the map can be treated as this machine's map.
+
+## On the live board
+
+2026-11-12, with m1n1 running on `macostest` and the host on the debug USB channel. `nixos-m4pro aic-init` ran `Aic.init` over the proxy:
+
+```
+aic 1/2 dies, 2720/4096 IRQs
+aic irq 0x1ad cfg 0x5024106b4 before 0x00000003 after 0x00000003 target 3  (unchanged)
+```
+
+m1n1's own `aic23_init` had already set the target at startup, so the `P_MASK32` wrote the value that was there. The word is `0x3` on silicon, not the `0xa0` the loopback seeds, so no other bits are set in it.

@@ -11,6 +11,7 @@ module Wire = Proto.Wire
 module Serial = Proto.Serial
 module Pmgr = Soc.Pmgr
 module Wdt = Soc.Wdt
+module Aic = Soc.Aic
 
 let mask_checked transport addr clear set =
   ignore (Proxy.call transport Proxy.p_get_exc_count []);
@@ -87,6 +88,52 @@ let disable_wdt transport =
     (fun (name, _) (b, a) -> { domain = name; before = b; after = a })
     wdt_registers (List.combine before after)
 
+(* Aic.init is discover, then one P_MASK32 per aic-ext-intr-cfg entry that
+   sets the target nibble of that IRQ's config word. m1n1's aic23_init made
+   the same writes at startup, so the target is expected to be set already.
+   The step reports each word before and after, and fails if anything outside
+   the target nibble moved or the target did not land. *)
+type cfg_step = {
+  irq : int;
+  addr : int64;
+  target : int;
+  cfg_before : int64;
+  cfg_after : int64;
+}
+
+let target_of v = Int64.to_int v land Aic.irq_cfg_target
+
+let aic_init transport =
+  let t =
+    {
+      Aic.read32 = Probe.read_or_raise transport;
+      write32 = write_checked transport;
+      mask32 = mask_checked transport;
+    }
+  in
+  let layout = Aic.discover t in
+  let entries = Aic.decode_ext Aic.ext_intr_cfg in
+  let read_cfg (die, irq, _) = Probe.read_or_raise transport (Aic.config_addr layout die irq) in
+  let before = List.map read_cfg entries in
+  let _ = Aic.init t in
+  let after = List.map read_cfg entries in
+  let chip = Proxy.call transport Proxy.p_get_chipid [] in
+  if chip <> Probe.expected_chip_id then
+    failwith (Printf.sprintf "chip id after the write is %#Lx" chip);
+  let keep = Int64.lognot (Int64.of_int Aic.irq_cfg_target) in
+  let steps =
+    List.map2
+      (fun (die, irq, target) (b, a) ->
+        let addr = Aic.config_addr layout die irq in
+        if target_of a <> target then
+          failwith (Printf.sprintf "aic irq %#x target is %d after init, wanted %d" irq (target_of a) target);
+        if Int64.logand a keep <> Int64.logand b keep then
+          failwith (Printf.sprintf "aic irq %#x: bits outside the target moved, %#Lx -> %#Lx" irq b a);
+        { irq; addr; target; cfg_before = b; cfg_after = a })
+      entries (List.combine before after)
+  in
+  (layout, steps)
+
 let with_device ?device f =
   let device = match device with Some d -> d | None -> Wire.device () in
   let serial = Serial.open_device ~console:(Probe.console_printer ()) device in
@@ -104,6 +151,20 @@ let run_disable_wdt ?device () =
         (fun s ->
           Printf.printf "wdt %-9s before %#010Lx after %#010Lx%s\n" s.domain s.before s.after
             (if s.after = 0L then "  (disabled)" else "  (ARMED)"))
+        steps;
+      Printf.printf "m1n1 still answers, chip id %#Lx\n" Probe.expected_chip_id;
+      steps)
+
+let run_aic_init ?device () =
+  with_device ?device (fun transport ->
+      let layout, steps = aic_init transport in
+      Printf.printf "aic %d/%d dies, %d/%d IRQs\n" layout.nr_die layout.max_die layout.nr_irq
+        layout.max_irq;
+      List.iter
+        (fun s ->
+          Printf.printf "aic irq %#x cfg %#Lx before %#010Lx after %#010Lx target %d%s\n" s.irq s.addr
+            s.cfg_before s.cfg_after s.target
+            (if s.cfg_before = s.cfg_after then "  (unchanged)" else "  (CHANGED)"))
         steps;
       Printf.printf "m1n1 still answers, chip id %#Lx\n" Probe.expected_chip_id;
       steps)

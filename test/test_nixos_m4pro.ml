@@ -736,4 +736,18 @@ let () =
   Proxy.write32 transport (Wdt.reg Wdt.ctl) 0L;
   let steps = Live.disable_wdt transport in
   check "wdt no-op" (List.for_all (fun (s : Live.step) -> s.before = 0L && s.after = 0L) steps);
+
+  (* Live.aic_init sets the target nibble and keeps the rest of the word. *)
+  Proxy.write32 transport (Int64.add Aic.base (Int64.of_int Aic.cap0_offset)) Loopback.aic_cap0;
+  Proxy.write32 transport (Int64.add Aic.base (Int64.of_int Aic.maxnumirq_offset)) Loopback.aic_maxnumirq;
+  let cfg = Int64.add Aic.base (Int64.of_int (Aic.extint_base + (4 * 0x1ad))) in
+  Proxy.write32 transport cfg 0xa0L;
+  let _, cfg_steps = Live.aic_init transport in
+  check "aic init changes target"
+    (match cfg_steps with
+    | [ s ] -> s.irq = 0x1ad && s.addr = 0x5024106b4L && s.cfg_before = 0xa0L && s.cfg_after = 0xa3L
+    | _ -> false);
+  let _, again = Live.aic_init transport in
+  check "aic init repeat is a no-op"
+    (List.for_all (fun (s : Live.cfg_step) -> s.cfg_before = 0xa3L && s.cfg_after = 0xa3L) again);
   print_endline "ok"
