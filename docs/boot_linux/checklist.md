@@ -45,8 +45,9 @@ Each item has a check that marks it done. Items are ticked only after the check 
 - [x] **11. Basic commands.** `uname -a`, `ls /`, `cat /proc/cpuinfo`, `cat /proc/meminfo` (about 24 GB), `cat /proc/interrupts`, `cat /proc/device-tree/model`, `dmesg`, `date`, `mount`, `df`, `ps`, `free`, `top`.
   Check: each runs and gives a sane answer; output recorded here.
   Result: all run. `uname -a`: `Linux (none) 7.2.15-m4pro ... aarch64`. `/proc/meminfo`: `MemTotal: 24226848 kB`. `/proc/cpuinfo`: implementer `0x61`, part `0x055`, SME and SME2 listed. `mount` and `df -h`: proc, sysfs, devtmpfs, devpts, tmpfs. `ps`/`top`: 83 tasks, 100% idle. `date` is 1970: no RTC driver yet (SMC/SPMI). Errors in the log are cpufreq without cluster info in the DT, the keyboard backlight PWM period, and drivers for other boards in defconfig.
-- [ ] **12. All 12 cores.** Drop `maxcpus=1`.
+- [x] **12. All 12 cores.** Drop `maxcpus=1`.
   Check: `nproc` is 12 and `/proc/cpuinfo` shows both core types.
+  Result: `smp: Brought up 1 node, 12 CPUs`, `nproc` 12, 4 × part `0x054` and 8 × `0x055`. It first oopsed on a secondary core unpacking the initramfs: iBoot leaves two CTRR read-only ranges locked on the secondary cores and m1n1 reserves only one. `tools/tether-boot.py` reserves both. Every core then writes 256 MB at 5-6 GB/s, and 12 parallel writers filled tmpfs with no oops. See `smp-ctrr.md`.
 - [ ] **13. Stability.** The watchdog does not reset the machine, an hour idle with no hang, `reboot` restarts it.
   Check: uptime past an hour; `reboot` comes back to m1n1.
   So far: `watchdog0` registered and the machine stayed up 168 s with no reset; `reboot -f` printed `reboot: Restarting system` and the machine restarted. The hour is not done yet.
