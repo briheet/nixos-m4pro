@@ -653,4 +653,75 @@ let () =
       output_string oc (M1n1_image.needle ());
       close_out oc;
       check "image offset" (M1n1_image.find_offset image = Some 16));
+
+  (* Serial reader on a socketpair. The far end has already queued what a
+     live m1n1 line can carry ahead of a reply: console text, a lone ff, an
+     ff 55 that is not a header, an event, and a stale boot reply. *)
+  let near, far = Unix.socketpair Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+  let console = Buffer.create 32 in
+  let serial = Serial.of_fd ~timeout:1.0 ~console:(Buffer.add_string console) near in
+  let send s = ignore (Unix.write_substring far s 0 (String.length s)) in
+  let reply_data = Bytes.make Wire.reply_data_len '\000' in
+  Proxy.put_u64 reply_data 0 Proxy.p_get_chipid;
+  Proxy.put_u64 reply_data 16 0x6040L;
+  let event =
+    let b = Bytes.make (8 + 3 + 4) '\000' in
+    Wire.put_u32 b 0 Wire.req_event;
+    Bytes.set b 4 '\003';
+    Bytes.blit_string "evt" 0 b 8 3;
+    Bytes.to_string b
+  in
+  send "hello\n\xffx\xff\x55y";
+  send event;
+  send (Bytes.to_string (Wire.encode_reply Wire.req_boot Wire.st_ok Bytes.empty));
+  send (Bytes.to_string (Wire.encode_reply Wire.req_proxy Wire.st_ok reply_data));
+  let chip = Proxy.call (Serial.transport serial) Proxy.p_get_chipid [] in
+  check "serial chip id" (chip = 0x6040L);
+  check "serial console" (Buffer.contents console = "hello\n\xffx\xff\x55y");
+  let sent = Bytes.create Wire.command_len in
+  ignore (Unix.read far sent 0 Wire.command_len);
+  let command = Wire.parse_command sent in
+  check "serial request framing"
+    (command.cmd = Wire.req_proxy && command.checksum_ok
+    && Proxy.get_u64 command.payload 0 = Proxy.p_get_chipid);
+  (try
+     ignore (Proxy.call (Serial.transport serial) Proxy.p_get_chipid []);
+     fail "serial read without a reply should time out"
+   with Serial.Timeout _ -> ());
+  Unix.close far;
+  Serial.close serial;
+
+  (* Probe on the loopback. It must read, and nothing it does may write. *)
+  let board = Loopback.create () in
+  let transport = Wire.proxy_transport (Loopback.handle board) in
+  Proxy.write32 transport (Int64.add Aic.base (Int64.of_int Aic.cap0_offset)) Loopback.aic_cap0;
+  Proxy.write32 transport (Int64.add Aic.base (Int64.of_int Aic.maxnumirq_offset)) Loopback.aic_maxnumirq;
+  let writes = ref 0 in
+  let counting request =
+    let opcode = Proxy.get_u64 request 0 in
+    if opcode = Proxy.p_write32 || opcode = Proxy.p_write64 || opcode = Proxy.p_mask32 then incr writes;
+    transport request
+  in
+  let report = Probe.probe counting ~device:"loopback" in
+  check "probe chip id" (report.chip_id = 0x6040L);
+  check "probe base" (report.base = Loopback.m1n1_base);
+  check "probe no writes" (!writes = 0);
+  check "probe all read" (List.for_all (fun (r : Probe.reading) -> r.value <> None) report.readings);
+  (match report.aic with
+  | Ok l -> check "probe aic" (l.nr_die = 1 && l.max_die = 2 && l.nr_irq = 2720 && l.max_irq = 4096)
+  | Error msg -> fail ("probe aic: " ^ msg));
+
+  (* Live.power_aic refuses a domain that is not already active, and on an
+     active one it leaves the state as it was. *)
+  let board = Loopback.create () in
+  let transport = Wire.proxy_transport (Loopback.handle board) in
+  (try
+     ignore (Live.power_aic transport);
+     fail "power_aic changed a domain that was not active"
+   with Failure message -> check "live refuses" (String.ends_with ~suffix:"refusing to change it" message));
+  List.iter
+    (fun (d : Pmgr.domain) -> Proxy.write32 transport (Pmgr.at d.offset) 0x000000ffL)
+    [ Pmgr.ps_pms; Pmgr.ps_aic ];
+  let steps = Live.power_aic transport in
+  check "live no-op" (List.for_all (fun (s : Live.step) -> s.before = s.after && s.after = 0xffL) steps);
   print_endline "ok"

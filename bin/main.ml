@@ -1,1 +1,15 @@
-let () = Nixos_m4pro.Client.run ()
+let usage () =
+  prerr_endline "usage: nixos-m4pro            run the boot sequence on the loopback";
+  prerr_endline "       nixos-m4pro probe [DEV] read-only probe of the live board through m1n1";
+  prerr_endline "       nixos-m4pro power-aic [DEV]  power the pms and aic domains (writes; no-op if already on)";
+  prerr_endline "                               DEV defaults to $M1N1DEVICE, then the debug USB channel";
+  exit 2
+
+let () =
+  match Array.to_list Sys.argv with
+  | [ _ ] -> Nixos_m4pro.Client.run ()
+  | [ _; "probe" ] -> ignore (Nixos_m4pro.Probe.run ())
+  | [ _; "probe"; device ] -> ignore (Nixos_m4pro.Probe.run ~device ())
+  | [ _; "power-aic" ] -> ignore (Nixos_m4pro.Live.run_power_aic ())
+  | [ _; "power-aic"; device ] -> ignore (Nixos_m4pro.Live.run_power_aic ~device ())
+  | _ -> usage ()

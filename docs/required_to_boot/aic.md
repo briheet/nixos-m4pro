@@ -54,7 +54,7 @@ m1n1 stays a submodule and its sources were not edited.
 4. Place `sw_set`, `sw_clr`, `mask_set`, and `mask_clr` after the config array. The stride properties from the device tree replace the computed stride. For `max_irq` of `0x400` the computed stride is `0x1280`. This Mac's stride is `0x4a00`.
 5. For each external IRQ, `P_MASK32` clears bits 3:0 and sets the target. Other bits in that word stay.
 
-`nr_die` and `nr_irq` are not in the device tree. They are silicon registers. The loopback has no AIC, so the client writes a stand-in before `init`: `cap0 = 0x400` and `maxnumirq = 0x01000400`. That is 1 die and 1024 IRQs, which is large enough for IRQ `0x1ad`. A live proxy reads the real counts instead of planting these.
+`nr_die` and `nr_irq` are not in the device tree. They are silicon registers. `nixos-m4pro probe` read them from this Mac through m1n1 on 2026-11-12: `cap0 = 0x00080aa0` and `maxnumirq = 0x02001000`. That is 2720 IRQs on 1 die, with room for 4096 IRQs on 2 dies. 4096 is exactly the `0x80 * 32` limit, so the range check passes with no margin. The loopback has no AIC, so the client plants those two values before `init`.
 
 `set_sw` and `ack` follow `aic_set_sw` and `aic_ack`. `ack` reads `base + 0x40000`.
 
@@ -65,11 +65,11 @@ m1n1 stays a submodule and its sources were not edited.
 `nix develop -c dune exec -- nixos-m4pro` printed:
 
 ```text
-AIC /arm-io/aic aic,3 base 0x502400000, 1/1 dies, 1024/1024 IRQs
+AIC /arm-io/aic aic,3 base 0x502400000, 1/2 dies, 2720/4096 IRQs
 external irq 0x1ad target 3 at 0x5024106b4
 ```
 
-The `1/1` and `1024/1024` figures are the loopback seed, not a reading from this Mac.
+The `1/2` and `2720/4096` figures are the values read from this Mac, planted into the loopback.
 
 ## Still open
 

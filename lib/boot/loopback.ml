@@ -65,6 +65,14 @@ let post t msg0 msg1 = Queue.add (msg0, msg1) t.inbox
 let sent t = List.rev !(t.sent)
 let chip_id = 0x6040L
 
+(* Where m1n1 reported it was loaded on the live board, 2026-11-12. *)
+let m1n1_base = 0x10004bac000L
+
+(* AIC CAP0 and MAXNUMIRQ as `nixos-m4pro probe` read them from this Mac on
+   2026-11-12: 2720 IRQs on 1 die, room for 4096 IRQs on 2 dies. *)
+let aic_cap0 = 0x00080aa0L
+let aic_maxnumirq = 0x02001000L
+
 let mbox offset = Int64.add Ans.cpu_base (Int64.of_int (Ans.mbox_offset + offset))
 let a2i_send0 = mbox Ans.mbox_a2i_send0
 let a2i_send1 = mbox Ans.mbox_a2i_send1
@@ -258,6 +266,9 @@ let answer t payload =
   let status, retval =
     if opcode = Proxy.p_nop then (Proxy.s_ok, 0L)
     else if opcode = Proxy.p_get_chipid then (Proxy.s_ok, chip_id)
+    else if opcode = Proxy.p_get_base then (Proxy.s_ok, m1n1_base)
+    (* Loopback reads never fault, so m1n1's exception counter stays 0. *)
+    else if opcode = Proxy.p_get_exc_count then (Proxy.s_ok, 0L)
     else if opcode = Proxy.p_read32 then (Proxy.s_ok, read32 t (arg 0))
     else if opcode = Proxy.p_read64 then (Proxy.s_ok, read64 t (arg 0))
     else if opcode = Proxy.p_write32 then (

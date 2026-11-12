@@ -7,6 +7,7 @@
 
 module Proxy = Proto.Proxy
 module Wire = Proto.Wire
+module Serial = Proto.Serial
 module Uart = Soc.Uart
 module Wdt = Soc.Wdt
 module Aic = Soc.Aic
@@ -19,5 +20,7 @@ module Loopback = Boot.Loopback
 module M1n1_image = Boot.M1n1_image
 module Payload = Boot.Payload
 module Client = Boot.Client
+module Probe = Boot.Probe
+module Live = Boot.Live
 
 let machine = Client.machine

@@ -45,15 +45,14 @@ let run () =
   Printf.printf "watchdog controls %#Lx %#Lx\n"
     (wdt.read32 (Wdt.reg Wdt.ctl))
     (wdt.read32 Wdt.secondary.address);
-  (* Capability registers are silicon state. This seed is one die and 1024
-     IRQs, which is large enough for the external IRQ in the device tree.
-     A live proxy reads the real counts from the AIC. *)
+  (* Capability registers are silicon state. The loopback has no AIC, so
+     the client plants the values `nixos-m4pro probe` read from this Mac. *)
   ignore
     (Proxy.call transport Proxy.p_write32
-       [ Int64.add Aic.base (Int64.of_int Aic.cap0_offset); 0x400L ]);
+       [ Int64.add Aic.base (Int64.of_int Aic.cap0_offset); Loopback.aic_cap0 ]);
   ignore
     (Proxy.call transport Proxy.p_write32
-       [ Int64.add Aic.base (Int64.of_int Aic.maxnumirq_offset); 0x01000400L ]);
+       [ Int64.add Aic.base (Int64.of_int Aic.maxnumirq_offset); Loopback.aic_maxnumirq ]);
   let aic = Aic.of_transport transport in
   let layout = Aic.init aic in
   let _die, irq, target = List.hd (Aic.decode_ext Aic.ext_intr_cfg) in
@@ -117,4 +116,4 @@ let run () =
     handoff.kernel_image_size Payload.expect_compatible handoff.has_memory handoff.initrd_bytes;
   Printf.printf "kboot entry is that kernel and x0 is the fdt\n";
   report_image ();
-  Printf.printf "Live UART is %s at %d baud, from a second machine.\n" Wire.darwin_device Wire.baud
+  Printf.printf "Live proxy is %s at %d baud, from a second machine.\n" (Wire.device ()) Wire.baud
