@@ -1,0 +1,4 @@
+(executable
+ (public_name nixos-m4pro)
+ (name main)
+ (libraries nixos_m4pro))

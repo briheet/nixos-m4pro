@@ -1,0 +1,5 @@
+; Loopback peer, payload scanner, m1n1 image check, and the client sequence.
+(library
+ (name boot)
+ (wrapped true)
+ (libraries proto soc nvme))

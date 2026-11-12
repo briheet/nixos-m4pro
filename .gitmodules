@@ -1,0 +1,6 @@
+[submodule "upstream/m1n1"]
+	path = upstream/m1n1
+	url = https://github.com/AsahiLinux/m1n1
+[submodule "upstream/linux"]
+	path = upstream/linux
+	url = https://github.com/AsahiLinux/linux

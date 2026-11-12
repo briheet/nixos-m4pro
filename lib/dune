@@ -1,0 +1,5 @@
+; Public surface used by bin/ and test/. Each layer is its own wrapped library.
+(library
+ (name nixos_m4pro)
+ (wrapped true)
+ (libraries proto soc nvme boot))

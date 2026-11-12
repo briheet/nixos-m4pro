@@ -1,0 +1,9 @@
+_build/
+build/
+configs/
+*.install
+.merlin
+.ocamlformat-ignore
+result
+result-*
+.direnv

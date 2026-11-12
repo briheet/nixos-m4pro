@@ -1,0 +1,4 @@
+; m1n1 UART proxy. Inner opcodes and outer framing, with no device knowledge.
+(library
+ (name proto)
+ (wrapped true))

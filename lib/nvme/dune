@@ -1,0 +1,6 @@
+; ANS coprocessor. rtkit is the message codec; ans.ml includes it and owns the device.
+(library
+ (name nvme)
+ (wrapped true)
+ (libraries proto soc)
+ (private_modules rtkit))

@@ -1,0 +1,5 @@
+; Blocks m1n1 brings up before the disk: UART, watchdog, AIC, PMGR, DART, PCIe, SART.
+(library
+ (name soc)
+ (wrapped true)
+ (libraries proto))
