@@ -44,7 +44,14 @@
 
   # A bring-up system: log in as root on both consoles without a password.
   services.getty.autologinUser = "root";
+  # A shell in the initrd if stage 1 fails (root has no password here).
+  boot.initrd.systemd.emergencyAccess = true;
   users.users.root.initialHashedPassword = "";
+
+  # No network device yet (Wi-Fi needs PCIe), and the kernel has no
+  # netfilter. Turn the firewall back on with the network and nftables.
+  networking.firewall.enable = false;
+  networking.dhcpcd.enable = false;
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
