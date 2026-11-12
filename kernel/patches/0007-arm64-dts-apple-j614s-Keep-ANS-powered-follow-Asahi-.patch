@@ -1,8 +1,8 @@
 From d019f3643597b9cc8fbf8faeb1264af7031250a1 Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 21:22:58 +0000
-Subject: [PATCH 7/9] arm64: dts: apple: j614s: Keep ANS powered; follow Asahi
- on aic and pms_fpwm
+Subject: [PATCH 07/11] arm64: dts: apple: j614s: Keep ANS powered; follow
+ Asahi on aic and pms_fpwm
 
 Gating the ANS power domain resets the machine about 3 minutes later
 (193 s on J614s, every time). Found by powering off, on the running
@@ -78,6 +78,3 @@ index 9a47a2775..b44970154 100644
  	};
  
  	ps_fab0_soc: power-controller@168 {
--- 
-2.47.0
-

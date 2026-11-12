@@ -51,15 +51,23 @@ Each item has a check that marks it done. Items are ticked only after the check 
 - [ ] **13. Stability.** The watchdog does not reset the machine, an hour idle with no hang, `reboot` restarts it.
   Check: uptime past an hour; `reboot` comes back to m1n1.
   So far: `watchdog0` registered and the machine stayed up 168 s with no reset; `reboot -f` printed `reboot: Restarting system` and the machine restarted. The hour is not done yet.
-- [ ] **14. Screen console.** m1n1's framebuffer handed to Linux as `simple-framebuffer`, with the framebuffer console on it.
+- [x] **14. Screen console.** m1n1's framebuffer handed to Linux as `simple-framebuffer`, with the framebuffer console on it.
   Check: the boot log is on the internal panel.
 
 ## D. NixOS from RAM
 
-- [ ] **15. NixOS initramfs.** A NixOS system built with nixos-apple-silicon's modules plus this kernel and device tree, packed as the initramfs.
+- [x] **15. NixOS initramfs.** A NixOS system with this kernel and device tree, booted from RAM (netboot, `nixosConfigurations.m4pro-ram`).
   Check: a NixOS shell on the console where `systemctl status`, `nix --version`, and `ls /nix/store` work.
+  Result: NixOS 26.11 logs root in on ttyDC0 and on the screen (tty1); 12 CPUs, 23.7 GB, `nix 2.34.9`.
 - [ ] **16. Boot without the host.** Kernel and NixOS embedded in the m1n1 image on `macostest`.
   Check: the M4 Pro boots to NixOS with the host cable unplugged. Changes do not survive a reboot.
+
+## E. Internal SSD
+
+- [x] **17. NVMe.** ANS, its mailbox and SART in t6041.dtsi; mainline 0x304bc392 "nvme: apple: add t8132 (M4) ANS2 NVMe support".
+  Check: `nvme0n1` with its partitions, reads without errors.
+  Result: `APPLE SSD AP0512Z`, GPT with p1 p2 p3, 2.3 GB/s sequential read. As on other M4-generation chips (the ADT has `nvme-secure-bar`), the controller must be driven through ADT `/arm-io/ans` reg 9 (0x44dcc0000): through reg 3 the linear-SQ register at 0x24908 raised an SError (m1n1 543667fe does the same).
+- [ ] **18. Install to disk.** Free space next to the macOS container, an EFI partition and a NixOS root, booted by m1n1 from `macostest` without the host.
 
 ## Needed from the owner along the way
 

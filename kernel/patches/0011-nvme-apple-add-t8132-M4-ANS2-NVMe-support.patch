@@ -1,0 +1,108 @@
+From 0d03732f0d359359bbf32f4a40bb40f43d8aa502 Mon Sep 17 00:00:00 2001
+From: Yureka Lilian <yureka@cyberchaos.dev>
+Date: Sun, 6 Sep 2026 22:15:30 +0200
+Subject: [PATCH 11/11] nvme: apple: add t8132 (M4) ANS2 NVMe support
+
+Add support for ANS2 NVMe on the Apple t8132 (M4) SoC.
+
+This variant requires the IO queues to be registered using additional
+MMIO writes. The qsize of the create_{cq,sq} command is now ignored, and
+instead a write to mmio_nvme+0x1210 (which was previously known as
+APPLE_ANS_MAX_PEND_CMDS_CTRL) sets the IO queue sizes.
+
+Signed-off-by: Yureka Lilian <yureka@cyberchaos.dev>
+Reviewed-by: Sven Peter <sven@kernel.org>
+Signed-off-by: Keith Busch <kbusch@kernel.org>
+---
+ drivers/nvme/host/apple.c | 39 +++++++++++++++++++++++++++++++++++----
+ 1 file changed, 35 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/nvme/host/apple.c b/drivers/nvme/host/apple.c
+index c932a3805..de3fc40e0 100644
+--- a/drivers/nvme/host/apple.c
++++ b/drivers/nvme/host/apple.c
+@@ -42,7 +42,11 @@
+ #define APPLE_ANS_ACQ_DB  0x1004
+ #define APPLE_ANS_IOCQ_DB 0x100c
+ 
+-#define APPLE_ANS_MAX_PEND_CMDS_CTRL 0x1210
++#define APPLE_ANS_T8132_IOQ_CMDS 0x1200
++#define APPLE_ANS_T8132_IOQ_CQES 0x1208
++#define APPLE_ANS_T8132_IOQ_SIZE 0x1210
++
++#define APPLE_ANS_T8103_MAX_PEND_CMDS_CTRL 0x1210
+ 
+ #define APPLE_ANS_BOOT_STATUS	 0x1300
+ #define APPLE_ANS_BOOT_STATUS_OK 0xde71ce55
+@@ -184,6 +188,7 @@ struct apple_nvme_iod {
+ 
+ struct apple_nvme_hw {
+ 	bool has_lsq_nvmmu;
++	bool needs_ioq_register;
+ 	u32 max_queue_depth;
+ };
+ 
+@@ -1170,9 +1175,16 @@ static void apple_nvme_reset_work(struct work_struct *work)
+ 			anv->mmio_nvme + APPLE_ANS_LINEAR_SQ_CTRL);
+ 
+ 		/* Allow as many pending command as possible for both queues */
+-		writel(anv->hw->max_queue_depth
+-			| (anv->hw->max_queue_depth << 16), anv->mmio_nvme
+-			+ APPLE_ANS_MAX_PEND_CMDS_CTRL);
++		if (!anv->hw->needs_ioq_register) {
++			/*
++			 * Since T8132, this is replaced by IOQ_SIZE which is
++			 * located at the same offset and is handled with the
++			 * IO queue setup further below.
++			 */
++			writel(anv->hw->max_queue_depth
++				| (anv->hw->max_queue_depth << 16), anv->mmio_nvme
++				+ APPLE_ANS_T8103_MAX_PEND_CMDS_CTRL);
++		}
+ 
+ 		/* Setup the NVMMU for the maximum admin and IO queue depth */
+ 		writel(anv->hw->max_queue_depth - 1,
+@@ -1227,6 +1239,16 @@ static void apple_nvme_reset_work(struct work_struct *work)
+ 	if (ret)
+ 		goto out_remove_cq;
+ 
++	if (anv->hw->needs_ioq_register) {
++		writeq(anv->ioq.cq_dma_addr,
++			anv->mmio_nvme + APPLE_ANS_T8132_IOQ_CQES);
++		writeq(anv->ioq.sq_dma_addr,
++			anv->mmio_nvme + APPLE_ANS_T8132_IOQ_CMDS);
++		writel((anv->hw->max_queue_depth - 1)
++			| ((anv->hw->max_queue_depth - 1) << 16), anv->mmio_nvme
++			+ APPLE_ANS_T8132_IOQ_SIZE);
++	}
++
+ 	apple_nvme_init_queue(&anv->ioq);
+ 	nr_io_queues = 1;
+ 	ret = nvme_set_queue_count(&anv->ctrl, &nr_io_queues);
+@@ -1769,17 +1791,26 @@ static DEFINE_SIMPLE_DEV_PM_OPS(apple_nvme_pm_ops, apple_nvme_suspend,
+ 
+ static const struct apple_nvme_hw apple_nvme_t8015_hw = {
+ 	.has_lsq_nvmmu = false,
++	.needs_ioq_register = false,
+ 	.max_queue_depth = 16,
+ };
+ 
+ static const struct apple_nvme_hw apple_nvme_t8103_hw = {
+ 	.has_lsq_nvmmu = true,
++	.needs_ioq_register = false,
++	.max_queue_depth = 64,
++};
++
++static const struct apple_nvme_hw apple_nvme_t8132_hw = {
++	.has_lsq_nvmmu = true,
++	.needs_ioq_register = true,
+ 	.max_queue_depth = 64,
+ };
+ 
+ static const struct of_device_id apple_nvme_of_match[] = {
+ 	{ .compatible = "apple,t8015-nvme-ans2", .data = &apple_nvme_t8015_hw },
+ 	{ .compatible = "apple,t8103-nvme-ans2", .data = &apple_nvme_t8103_hw },
++	{ .compatible = "apple,t8132-nvme-ans2", .data = &apple_nvme_t8132_hw },
+ 	{ .compatible = "apple,nvme-ans2", .data = &apple_nvme_t8103_hw },
+ 	{},
+ };

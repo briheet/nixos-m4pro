@@ -1,7 +1,8 @@
 From 7a426d5d26bdd2ccb860be81797b717096c55cf2 Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 21:35:23 +0000
-Subject: [PATCH 8/9] arm64: dts: apple: j614s: Leave the GPU PMGR domains out
+Subject: [PATCH 08/11] arm64: dts: apple: j614s: Leave the GPU PMGR domains
+ out
 
 Powering on afr in the GPU PMGR block at probe raised an SError. Leave
 gpx, afr and gfx undescribed until there is a GPU driver, as Asahi's
@@ -50,6 +51,3 @@ index b44970154..77fbc7135 100644
  &pmgr {
  	ps_ispsens0: power-controller@0 {
  		compatible = "apple,t6040-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
--- 
-2.47.0
-

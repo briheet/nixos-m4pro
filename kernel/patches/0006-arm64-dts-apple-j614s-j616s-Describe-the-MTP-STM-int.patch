@@ -1,7 +1,7 @@
 From 9063810b38fdfae33dbdfae7e132c74267e89a7a Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 20:28:34 +0000
-Subject: [PATCH 6/9] arm64: dts: apple: j614s/j616s: Describe the MTP STM
+Subject: [PATCH 06/11] arm64: dts: apple: j614s/j616s: Describe the MTP STM
  interface
 
 The STM interface reports the HID vendor and product IDs. Without it the
@@ -39,6 +39,3 @@ index 0cba2f80a..30afbfdc2 100644
  	actuator {
  	};
  
--- 
-2.47.0
-

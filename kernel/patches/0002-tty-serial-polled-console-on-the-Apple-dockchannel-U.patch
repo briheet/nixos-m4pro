@@ -1,8 +1,8 @@
 From 11de930a3bc9a6ee81ce51a373a289d18aa50345 Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 18:03:34 +0000
-Subject: [PATCH 2/9] tty: serial: polled console on the Apple dockchannel UART
- (J614s bring-up)
+Subject: [PATCH 02/11] tty: serial: polled console on the Apple dockchannel
+ UART (J614s bring-up)
 
 ---
  arch/arm64/boot/dts/apple/t6040-j614s.dts   |  23 ++
@@ -398,6 +398,3 @@ index 000000000..4eb38901c
 +
 +MODULE_DESCRIPTION("Apple dockchannel UART console");
 +MODULE_LICENSE("GPL");
--- 
-2.47.0
-
