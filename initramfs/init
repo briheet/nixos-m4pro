@@ -14,7 +14,16 @@ echo "nixos-m4pro initramfs on $(cat /proc/device-tree/model 2>/dev/null)"
 echo "$(uname -a)"
 echo
 
-# The console is whatever console= named. Respawn the shell if it exits.
+# A shell on the internal screen (tty1), for the built-in keyboard. tty1
+# becomes its controlling terminal, so Ctrl-C and job control work there.
+(
+  while true; do
+    setsid -c /bin/sh -l < /dev/tty1 > /dev/tty1 2>&1
+  done
+) &
+
+# The console is whatever console= named last (the debug USB channel).
+# Respawn the shell if it exits.
 while true; do
   setsid -c /bin/sh -l
 done

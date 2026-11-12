@@ -1,7 +1,7 @@
 From 50670ad4c90e34a370a06ee66135de07556ca968 Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 20:14:38 +0000
-Subject: [PATCH 5/5] pmdomain: apple: pmgr: never power off a domain on T6040
+Subject: [PATCH 5/7] pmdomain: apple: pmgr: never power off a domain on T6040
  (bring-up)
 
 genpd sync_state powers off domains it considers unused, which
