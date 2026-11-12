@@ -15,7 +15,7 @@ set -u
 cd "$(dirname "$0")/.." || exit 1
 BASE="earlycon console=tty0 console=ttyDC0 rdinit=/init cpuidle.off=1 clk_ignore_unused pd_ignore_unused loglevel=8 ignore_loglevel"
 EXTRA=${1:-}
-KERNEL=${2:-build/Image.gz}
+KERNEL=${2:-build/Image-min.gz}  # this-Mac-only kernel; build/Image.gz is the full defconfig one
 DTB=${3:-build/t6040-j614s.dtb}
 INITRD=${4:-build/initramfs.cpio.gz}
 DEV=/dev/cu.kis-100000-ch-0
@@ -33,13 +33,37 @@ if ! wait_port; then
   wait_port || { echo "m4run: $DEV did not appear"; exit 1; }
 fi
 
+m1n1_answers() {
+  perl -e 'alarm 12; exec @ARGV' dune exec -- nixos-m4pro probe 2>&1 | grep -q "chip id 0x6040"
+}
+
+# m1n1's own USB device; it is replaced by Debug USB after `debugusb`.
+m1n1_usb_present() {
+  ioreg -p IOUSB -l -w0 2>/dev/null | grep -q '"idProduct" = 12653'
+}
+
+restart_into_m1n1() {
+  echo "m4run: restarting the target into m1n1"
+  sudo -n "$VDM" reboot | tail -n 1
+  i=0
+  until m1n1_usb_present || [ $i -ge 60 ]; do perl -e 'select(undef,undef,undef,1)'; i=$((i + 1)); done
+  m1n1_usb_present || { echo "m4run: m1n1 did not come back on USB"; exit 1; }
+  echo "m4run: m1n1 up after ${i} s, switching to debug USB"
+  sudo -n "$VDM" debugusb | tail -n 1
+  wait_port || { echo "m4run: $DEV did not appear"; exit 1; }
+}
+
 ok=
-for i in 1 2 3 4 5; do
-  if perl -e 'alarm 12; exec @ARGV' dune exec -- nixos-m4pro probe 2>&1 | grep -q "chip id 0x6040"; then
-    ok=1; break
-  fi
-  perl -e 'select(undef,undef,undef,3)'
+for i in 1 2; do
+  if m1n1_answers; then ok=1; break; fi
 done
+if [ -z "$ok" ]; then
+  restart_into_m1n1
+  for i in 1 2 3 4 5; do
+    if m1n1_answers; then ok=1; break; fi
+    perl -e 'select(undef,undef,undef,2)'
+  done
+fi
 [ -n "$ok" ] || { echo "m4run: m1n1 is not answering"; exit 1; }
 echo "m4run: m1n1 answers"
 

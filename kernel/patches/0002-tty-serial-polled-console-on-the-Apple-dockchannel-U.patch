@@ -1,7 +1,7 @@
 From 04eeee72ce8b50288883e83b82b8a123237153c6 Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 18:03:34 +0000
-Subject: [PATCH 2/4] tty: serial: polled console on the Apple dockchannel UART
+Subject: [PATCH 2/5] tty: serial: polled console on the Apple dockchannel UART
  (J614s bring-up)
 
 ---

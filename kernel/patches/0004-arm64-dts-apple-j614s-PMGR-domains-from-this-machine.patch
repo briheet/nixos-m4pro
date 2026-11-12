@@ -1,7 +1,7 @@
 From 1fdc67c201f3071b008469f982b1a249502493cf Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 20:08:33 +0000
-Subject: [PATCH 4/4] arm64: dts: apple: j614s: PMGR domains from this
+Subject: [PATCH 4/5] arm64: dts: apple: j614s: PMGR domains from this
  machine's ADT
 
 t6040.dtsi reuses the M4 Max (t6041) PMGR list and deletes parts of it.
