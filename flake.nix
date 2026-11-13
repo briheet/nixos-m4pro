@@ -41,8 +41,15 @@
 
       # NixOS from RAM on the J614s, booted from the host through m1n1.
       #   nix build .#nixosConfigurations.m4pro-ram.config.system.build.netboot
+      # It carries the installed system (m4pro) to put on the SSD.
       nixosConfigurations.m4pro-ram = nixpkgs.lib.nixosSystem {
         modules = [ ./nixos/ram.nix ];
+        specialArgs.diskSystem = self.nixosConfigurations.m4pro.config.system.build.toplevel;
+      };
+
+      # NixOS on the internal SSD.
+      nixosConfigurations.m4pro = nixpkgs.lib.nixosSystem {
+        modules = [ ./nixos/disk.nix ];
       };
 
       devShells = each (pkgs: {
