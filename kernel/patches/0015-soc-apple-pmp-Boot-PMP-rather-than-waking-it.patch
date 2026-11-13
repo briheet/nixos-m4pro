@@ -1,7 +1,7 @@
-From 3ffe50592d646615a0b7bcb3d73dd9fb0058dc79 Mon Sep 17 00:00:00 2001
+From d7826cafef7f73fec972099285b6b3aff18bd315 Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Fri, 13 Nov 2026 05:16:46 +0000
-Subject: [PATCH 5/8] soc: apple: pmp: Boot PMP rather than waking it
+Subject: [PATCH 15/21] soc: apple: pmp: Boot PMP rather than waking it
 
 The probe starts the PMP CPU, so wait for its boot. macOS sends no IOP power
 request; the T6040 PMP never acknowledges one sent before its hello.

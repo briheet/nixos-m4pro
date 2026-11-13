@@ -1,7 +1,7 @@
 From 0d03732f0d359359bbf32f4a40bb40f43d8aa502 Mon Sep 17 00:00:00 2001
 From: Yureka Lilian <yureka@cyberchaos.dev>
 Date: Sun, 6 Sep 2026 22:15:30 +0200
-Subject: [PATCH 11/11] nvme: apple: add t8132 (M4) ANS2 NVMe support
+Subject: [PATCH 11/21] nvme: apple: add t8132 (M4) ANS2 NVMe support
 
 Add support for ANS2 NVMe on the Apple t8132 (M4) SoC.
 

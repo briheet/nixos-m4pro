@@ -1,0 +1,42 @@
+From e58c01d49de306b5064c9be973374c81d37fc214 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 12:08:49 +0530
+Subject: [PATCH] nvme: Hand T8132-generation ANS over quiesced
+
+T6040 ANS crashes when sent to IOP sleep and, after the sleep and PMGR reset
+m1n1 did, Linux could not boot it again. Quiesce it and leave its CPU
+running, the state iBoot hands over, so the next stage can wake it.
+---
+ src/nvme.c | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/src/nvme.c b/src/nvme.c
+index 421db939..3149e829 100644
+--- a/src/nvme.c
++++ b/src/nvme.c
+@@ -529,10 +529,18 @@ void nvme_shutdown(void)
+     if (!nvme_ctrl_disable())
+         printf("nvme: timeout while waiting for CSTS.RDY to clear\n");
+ 
+-    rtkit_sleep(nvme_rtkit);
+-    // Some machines call this ANS, some ANS2...
+-    pmgr_reset(nvme_die, "ANS");
+-    pmgr_reset(nvme_die, "ANS2");
++    if (nvme_type == NVME_T8132) {
++        // T8132-generation ANS crashes when sent to sleep and does not come
++        // back from a core reset for the next stage. Quiesced with its CPU
++        // left running it is in the state iBoot hands over: the next stage
++        // wakes it and it asks for new buffers (Linux nvme-apple, J614s).
++        rtkit_quiesce(nvme_rtkit);
++    } else {
++        rtkit_sleep(nvme_rtkit);
++        // Some machines call this ANS, some ANS2...
++        pmgr_reset(nvme_die, "ANS");
++        pmgr_reset(nvme_die, "ANS2");
++    }
+     rtkit_free(nvme_rtkit);
+     sart_free(nvme_sart);
+     asc_free(nvme_asc);
+-- 
+2.56.0
+

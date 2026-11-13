@@ -1,0 +1,114 @@
+From 73a3870f3b415b12bd92023d5b89e9057e9842a1 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 06:29:41 +0000
+Subject: [PATCH 21/21] nvme: apple: Quiesce T8132-generation ANS instead of
+ putting it to sleep
+
+T6040 ANS crashes (SError) when sent to IOP sleep after its NVMe shutdown,
+so Linux lost the SSD after any reset or unbind, and could not boot it after
+m1n1 had used it. From idle (0x201, what macOS 27.2.1 uses at shutdown) it
+does not come back for a new RTKit instance either.
+
+Quiesced (0x10) with its CPU left running, it is in the state iBoot hands
+over: the next start wakes it with an IOP power request and it says hello
+and asks for new buffers. Do that for the t8132 hardware data. Tested on
+J614s by unbinding and binding nvme-apple, and after m1n1 stage 1 read the
+ESP and handed over.
+---
+ drivers/nvme/host/apple.c | 39 +++++++++++++++++++++++++++------------
+ 1 file changed, 27 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/nvme/host/apple.c b/drivers/nvme/host/apple.c
+index de3fc40e0..d50be20c4 100644
+--- a/drivers/nvme/host/apple.c
++++ b/drivers/nvme/host/apple.c
+@@ -189,6 +189,7 @@ struct apple_nvme_iod {
+ struct apple_nvme_hw {
+ 	bool has_lsq_nvmmu;
+ 	bool needs_ioq_register;
++	bool stop_quiesced;
+ 	u32 max_queue_depth;
+ };
+ 
+@@ -1077,6 +1078,27 @@ static void apple_nvme_init_queue(struct apple_nvme_queue *q)
+ 	apple_nvme_enable_queue(q);
+ }
+ 
++/*
++ * Stop the ANS firmware before a reset, removal, shutdown or suspend.
++ *
++ * T8132-generation ANS (M4, M4 Pro/Max) crashes with an SError when sent to
++ * IOP sleep, and from idle (0x201, what macOS 27.2.1 uses at shutdown) it does
++ * not come back for a new RTKit instance. Quiesced (0x10) with its CPU left
++ * running, it restarts like the ANS iBoot hands over: woken with an IOP power
++ * request, it says hello again and asks for new buffers.
++ */
++static int apple_nvme_rtkit_stop(struct apple_nvme *anv)
++{
++	int ret;
++
++	if (anv->hw->stop_quiesced)
++		return apple_rtkit_quiesce(anv->rtk);
++
++	ret = apple_rtkit_shutdown(anv->rtk);
++	writel(0, anv->mmio_coproc + APPLE_ANS_COPROC_CPU_CONTROL);
++	return ret;
++}
++
+ static void apple_nvme_reset_work(struct work_struct *work)
+ {
+ 	unsigned int nr_io_queues = 1;
+@@ -1106,11 +1128,9 @@ static void apple_nvme_reset_work(struct work_struct *work)
+ 		if (anv->ctrl.ctrl_config & NVME_CC_ENABLE)
+ 			apple_nvme_disable(anv, false);
+ 		dev_dbg(anv->dev, "Trying to shut down RTKit before reset.");
+-		ret = apple_rtkit_shutdown(anv->rtk);
++		ret = apple_nvme_rtkit_stop(anv);
+ 		if (ret)
+ 			goto out;
+-
+-		writel(0, anv->mmio_coproc + APPLE_ANS_COPROC_CPU_CONTROL);
+ 	}
+ 
+ 	/*
+@@ -1742,9 +1762,7 @@ static void apple_nvme_remove(struct platform_device *pdev)
+ 	nvme_uninit_ctrl(&anv->ctrl);
+ 
+ 	if (apple_rtkit_is_running(anv->rtk)) {
+-		apple_rtkit_shutdown(anv->rtk);
+-
+-		writel(0, anv->mmio_coproc + APPLE_ANS_COPROC_CPU_CONTROL);
++		apple_nvme_rtkit_stop(anv);
+ 	}
+ 
+ 	apple_nvme_detach_genpd(anv);
+@@ -1757,9 +1775,7 @@ static void apple_nvme_shutdown(struct platform_device *pdev)
+ 	flush_delayed_work(&anv->flush_dwork);
+ 	apple_nvme_disable(anv, true);
+ 	if (apple_rtkit_is_running(anv->rtk)) {
+-		apple_rtkit_shutdown(anv->rtk);
+-
+-		writel(0, anv->mmio_coproc + APPLE_ANS_COPROC_CPU_CONTROL);
++		apple_nvme_rtkit_stop(anv);
+ 	}
+ }
+ 
+@@ -1778,9 +1794,7 @@ static int apple_nvme_suspend(struct device *dev)
+ 	apple_nvme_disable(anv, true);
+ 
+ 	if (apple_rtkit_is_running(anv->rtk)) {
+-		ret = apple_rtkit_shutdown(anv->rtk);
+-
+-		writel(0, anv->mmio_coproc + APPLE_ANS_COPROC_CPU_CONTROL);
++		ret = apple_nvme_rtkit_stop(anv);
+ 	}
+ 
+ 	return ret;
+@@ -1804,6 +1818,7 @@ static const struct apple_nvme_hw apple_nvme_t8103_hw = {
+ static const struct apple_nvme_hw apple_nvme_t8132_hw = {
+ 	.has_lsq_nvmmu = true,
+ 	.needs_ioq_register = true,
++	.stop_quiesced = true,
+ 	.max_queue_depth = 64,
+ };
+ 

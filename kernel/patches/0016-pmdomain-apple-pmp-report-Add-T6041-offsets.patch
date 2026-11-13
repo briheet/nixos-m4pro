@@ -1,7 +1,7 @@
-From 10085345ceca8f956f543ec8a4fc438916099208 Mon Sep 17 00:00:00 2001
+From f289e258392c94bd68d458d70f308154db50b03f Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Fri, 13 Nov 2026 05:18:45 +0000
-Subject: [PATCH 6/8] pmdomain: apple: pmp-report: Add T6041 offsets
+Subject: [PATCH 16/21] pmdomain: apple: pmp-report: Add T6041 offsets
 
 From the J614s ADT pmp ptd-range (m1n1 tools/pmp_assist.py), matching the
 writes macOS 27.2.1 makes under the m1n1 hypervisor.

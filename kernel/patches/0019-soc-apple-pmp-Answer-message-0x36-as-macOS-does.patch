@@ -1,0 +1,35 @@
+From 877678a02d62bc6132a384858933de1de6c4eb69 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 06:20:52 +0000
+Subject: [PATCH 19/21] soc: apple: pmp: Answer message 0x36 as macOS does
+
+The T6040 PMP sends 0x36 with a changing value every few seconds; macOS
+27.2.1 answers 0x37 with 8 each time.
+---
+ drivers/soc/apple/pmp.rs | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/soc/apple/pmp.rs b/drivers/soc/apple/pmp.rs
+index 76c210c8d..5bd4f9560 100644
+--- a/drivers/soc/apple/pmp.rs
++++ b/drivers/soc/apple/pmp.rs
+@@ -61,6 +61,11 @@
+ const OPC_SET_BUF: u64 = 0x30;
+ const OPC_REGISTER_IOREG: u64 = 0x32;
+ const OPC_SET_IOREG: u64 = 0x34;
++// Sent by the T6040 PMP every few seconds with a changing value (0x178,
++// 0x17e, 0x186, ...); macOS 27.2.1 always answers 0x37 with 8. Meaning
++// unknown.
++const OPC_UNK_36: u64 = 0x36;
++const UNK_36_REPLY: u64 = 8;
+ const OPC_ACK_MASK: u64 = 0x1;
+ const OPC_SHIFT: u32 = 48;
+ const MALLOC_SIZE_MASK: u64 = 0xFFFFFF;
+@@ -355,6 +360,7 @@ fn recv_message(&self, msg: u64) -> Result<()> {
+             OPC_SET_BUF => self.set_buf(msg & MSG_IOVA_MASK)?,
+             OPC_REGISTER_IOREG => self.register_ioreg(msg & MSG_IOVA_MASK)?,
+             OPC_SET_IOREG => self.set_ioreg(msg & SET_IOREG_INDEX_MASK)?,
++            OPC_UNK_36 => ((OPC_UNK_36 | OPC_ACK_MASK) << OPC_SHIFT) | UNK_36_REPLY,
+             _ => {
+                 dev_err!(self.dev, "Got unknown message {}", msg);
+                 return Err(EIO);

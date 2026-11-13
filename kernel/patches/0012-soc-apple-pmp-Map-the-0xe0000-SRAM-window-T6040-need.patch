@@ -1,7 +1,8 @@
 From 5ae5c6b7fd1099da598b8b55e3445ecb0fd2bd35 Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Fri, 13 Nov 2026 04:24:22 +0000
-Subject: [PATCH 1/8] soc: apple: pmp: Map the 0xe0000 SRAM window T6040 needs
+Subject: [PATCH 12/21] soc: apple: pmp: Map the 0xe0000 SRAM window T6040
+ needs
 
 The T6040 PMP firmware keeps its bootargs at 0x87480 in its SRAM, past the
 0x80000 window that covers T6030. The J614s ADT gives the region as 0xe0000.

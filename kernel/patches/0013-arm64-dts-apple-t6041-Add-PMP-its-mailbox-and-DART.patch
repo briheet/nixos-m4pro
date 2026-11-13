@@ -1,7 +1,7 @@
 From 6731e8905bd396c36c2c49c65b4a760b65162ca1 Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Fri, 13 Nov 2026 04:24:22 +0000
-Subject: [PATCH 2/8] arm64: dts: apple: t6041: Add PMP, its mailbox and DART
+Subject: [PATCH 13/21] arm64: dts: apple: t6041: Add PMP, its mailbox and DART
 
 From the J614s ADT. iBoot leaves PMP stopped; with it stopped ANS crashes
 whenever it sleeps.

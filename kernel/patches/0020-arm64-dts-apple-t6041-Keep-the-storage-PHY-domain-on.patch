@@ -1,0 +1,32 @@
+From 92b5509be5ca277a21e40038dec81b1b39217258 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 06:33:17 +0000
+Subject: [PATCH 20/21] arm64: dts: apple: t6041: Keep the storage PHY domain
+ on for NVMe
+
+With apcie_phy_sw off (Linux powers it down as unused), ANS faults with an
+SError when it goes idle. The ADT lists it on at handoff.
+---
+ arch/arm64/boot/dts/apple/t6041.dtsi | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm64/boot/dts/apple/t6041.dtsi b/arch/arm64/boot/dts/apple/t6041.dtsi
+index 5982a2b28..b6a42541c 100644
+--- a/arch/arm64/boot/dts/apple/t6041.dtsi
++++ b/arch/arm64/boot/dts/apple/t6041.dtsi
+@@ -701,9 +701,13 @@ nvme: nvme@44dcc0000 {
+ 			interrupts = <AIC_IRQ 2583 IRQ_TYPE_LEVEL_HIGH>;
+ 			mboxes = <&ans_mbox>;
+ 			apple,sart = <&sart>;
++			/*
++			 * apcie_phy_sw (the storage PHY switch below apcie_sys_st0/1)
++			 * must stay powered: with it off, ANS faults when it goes idle.
++			 */
+ 			power-domains = <&pmp_report_ans>, <&ps_apcie_sys_st0>,
+-					<&ps_apcie_sys_st1>;
+-			power-domain-names = "ans", "apcie0", "apcie1";
++					<&ps_apcie_sys_st1>, <&ps_apcie_phy_sw>;
++			power-domain-names = "ans", "apcie0", "apcie1", "apcie-phy";
+ 			resets = <&ps_ans>;
+ 		};
+ 

@@ -1,7 +1,7 @@
 From fe04f50c87ed83100786e12a55a12fb051edeff6 Mon Sep 17 00:00:00 2001
 From: nixos-m4pro <local@local>
 Date: Thu, 12 Nov 2026 21:44:50 +0000
-Subject: [PATCH 09/11] arm64: dts: apple: j614s: Follow Asahi on the display
+Subject: [PATCH 09/21] arm64: dts: apple: j614s: Follow Asahi on the display
  PMGR domains
 
 disp_cpu, dispext0_cpu and dispext1_cpu are locked by the firmware and

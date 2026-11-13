@@ -1,7 +1,7 @@
 From ebafd9d8db7a31cf7bfb932ea4a33cce4aed0073 Mon Sep 17 00:00:00 2001
 From: Yureka Lilian <yureka@cyberchaos.dev>
 Date: Wed, 14 Oct 2026 08:56:17 +0200
-Subject: [PATCH 01/11] arm64: dts: apple: Add minimal t604x (M4 Pro/Max)
+Subject: [PATCH 01/21] arm64: dts: apple: Add minimal t604x (M4 Pro/Max)
  device trees
 
 Added device trees for the following devices:

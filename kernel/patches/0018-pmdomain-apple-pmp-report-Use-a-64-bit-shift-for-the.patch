@@ -1,7 +1,7 @@
-From 72d17b4d19b26b3c668c8db71d2a3bc181e8eda3 Mon Sep 17 00:00:00 2001
+From 530a92cb92b0318da3431559e6c068cc5607ba9d Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Fri, 13 Nov 2026 05:19:58 +0000
-Subject: [PATCH 8/8] pmdomain: apple: pmp-report: Use a 64-bit shift for the
+Subject: [PATCH 18/21] pmdomain: apple: pmp-report: Use a 64-bit shift for the
  entry bit
 
 1 << id is an int shift, undefined for ids of 32 and up. T6041 reports ANS

@@ -1,7 +1,7 @@
-From c1a745edc5a7b7556391dea91f37de900ff5e2fd Mon Sep 17 00:00:00 2001
+From c6b3daf63c3c66467b1fc71786620321cbb61b5f Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Fri, 13 Nov 2026 05:18:45 +0000
-Subject: [PATCH 7/8] arm64: dts: apple: t6041: Report ANS power to PMP
+Subject: [PATCH 17/21] arm64: dts: apple: t6041: Report ANS power to PMP
 
 ANS is a notify_pmp device (entry 0x21). macOS reports its power state to
 PMP; take the ANS mailbox, SART and NVMe power domain through a PMP report

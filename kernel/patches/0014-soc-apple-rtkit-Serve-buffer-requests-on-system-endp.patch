@@ -1,17 +1,19 @@
-From 89f008d1a7ebf5f11cbc4a9588c52bad6d380c85 Mon Sep 17 00:00:00 2001
+From dd4623ee7d04535560c2de796b670b8664b1429d Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Fri, 13 Nov 2026 04:34:57 +0000
-Subject: [PATCH 3/8] soc: apple: rtkit: Serve buffer requests on system
+Subject: [PATCH 14/21] soc: apple: rtkit: Serve buffer requests on system
  endpoint 7
 
-The T6040 PMP starts endpoint 7, asks for a 2-page buffer there and does not
-acknowledge its IOP power state until it gets one, so the PMP driver timed
-out. Start the endpoint and answer its buffer requests like the ioreport
-ones.
+The T6040 PMP starts system endpoint 7 and asks for a 2-page buffer there;
+it does not acknowledge its IOP power state until it gets one, so the PMP
+driver timed out. macOS 27.2.1 answers that request with message type 5
+(traced under the m1n1 hypervisor); PMP ignores the type 1 used for the
+other buffer endpoints. Start the endpoint and answer its buffer requests
+with type 5.
 ---
  drivers/soc/apple/rtkit-internal.h |  1 +
- drivers/soc/apple/rtkit.c          | 22 ++++++++++++++++++++++
- 2 files changed, 23 insertions(+)
+ drivers/soc/apple/rtkit.c          | 30 ++++++++++++++++++++++++++++++
+ 2 files changed, 31 insertions(+)
 
 diff --git a/drivers/soc/apple/rtkit-internal.h b/drivers/soc/apple/rtkit-internal.h
 index c82065a8b..9580d54d0 100644
@@ -26,22 +28,31 @@ index c82065a8b..9580d54d0 100644
  
  	struct apple_rtkit_shmem syslog_buffer;
 diff --git a/drivers/soc/apple/rtkit.c b/drivers/soc/apple/rtkit.c
-index a863ae166..5a809b5e7 100644
+index a863ae166..0de8da945 100644
 --- a/drivers/soc/apple/rtkit.c
 +++ b/drivers/soc/apple/rtkit.c
-@@ -21,6 +21,11 @@ enum {
+@@ -21,6 +21,12 @@ enum {
  	APPLE_RTKIT_EP_SYSLOG = 2,
  	APPLE_RTKIT_EP_DEBUG = 3,
  	APPLE_RTKIT_EP_IOREPORT = 4,
 +	/*
 +	 * Seen on the T6040 PMP: asks for a buffer at boot and does not finish
-+	 * booting (no IOP power ack) until it gets one. Its use is unknown.
++	 * booting (no IOP power ack) until it gets one, answered with message
++	 * type 5 (macOS 27.2.1 under the m1n1 hypervisor). Its use is unknown.
 +	 */
 +	APPLE_RTKIT_EP_SYS7 = 7,
  	APPLE_RTKIT_EP_OSLOG = 8,
  };
  
-@@ -190,6 +195,7 @@ static void apple_rtkit_management_rx_epmap(struct apple_rtkit *rtk, u64 msg)
+@@ -55,6 +61,7 @@ enum {
+ #define APPLE_RTKIT_CRASHLOG_CRASH 1
+ 
+ #define APPLE_RTKIT_BUFFER_REQUEST	1
++#define APPLE_RTKIT_SYS7_BUFFER_REPLY	5
+ #define APPLE_RTKIT_BUFFER_REQUEST_SIZE GENMASK_ULL(51, 44)
+ #define APPLE_RTKIT_BUFFER_REQUEST_IOVA GENMASK_ULL(43, 0)
+ 
+@@ -190,6 +197,7 @@ static void apple_rtkit_management_rx_epmap(struct apple_rtkit *rtk, u64 msg)
  		case APPLE_RTKIT_EP_CRASHLOG:
  		case APPLE_RTKIT_EP_DEBUG:
  		case APPLE_RTKIT_EP_IOREPORT:
@@ -49,7 +60,21 @@ index a863ae166..5a809b5e7 100644
  		case APPLE_RTKIT_EP_OSLOG:
  			dev_dbg(rtk->dev,
  				"RTKit: Starting system endpoint 0x%02x\n", ep);
-@@ -397,6 +403,17 @@ static void apple_rtkit_crashlog_rx(struct apple_rtkit *rtk, u64 msg)
+@@ -306,7 +314,13 @@ static int apple_rtkit_common_rx_get_buffer(struct apple_rtkit *rtk,
+ 			reply |= FIELD_PREP(APPLE_RTKIT_OSLOG_IOVA,
+ 					    buffer->iova >> 12);
+ 		} else {
++			/*
++			 * Endpoint 7 takes its buffer with message type 5, as
++			 * macOS answers the T6040 PMP; it ignores type 1.
++			 */
+ 			reply = FIELD_PREP(APPLE_RTKIT_SYSLOG_TYPE,
++					   ep == APPLE_RTKIT_EP_SYS7 ?
++					   APPLE_RTKIT_SYS7_BUFFER_REPLY :
+ 					   APPLE_RTKIT_BUFFER_REQUEST);
+ 			reply |= FIELD_PREP(APPLE_RTKIT_BUFFER_REQUEST_SIZE,
+ 					    buffer->size >> 12);
+@@ -397,6 +411,17 @@ static void apple_rtkit_crashlog_rx(struct apple_rtkit *rtk, u64 msg)
  		rtk->ops->crashed(rtk->cookie, bfr, bfr ? rtk->crashlog_buffer.size : 0);
  }
  
@@ -67,7 +92,7 @@ index a863ae166..5a809b5e7 100644
  static void apple_rtkit_ioreport_rx(struct apple_rtkit *rtk, u64 msg)
  {
  	u8 type = FIELD_GET(APPLE_RTKIT_SYSLOG_TYPE, msg);
-@@ -542,6 +559,9 @@ static void apple_rtkit_rx_work(struct work_struct *work)
+@@ -542,6 +567,9 @@ static void apple_rtkit_rx_work(struct work_struct *work)
  	case APPLE_RTKIT_EP_IOREPORT:
  		apple_rtkit_ioreport_rx(rtk, rtk_work->msg);
  		break;
@@ -77,7 +102,7 @@ index a863ae166..5a809b5e7 100644
  	case APPLE_RTKIT_EP_OSLOG:
  		apple_rtkit_oslog_rx(rtk, rtk_work->msg);
  		break;
-@@ -741,6 +761,7 @@ int apple_rtkit_reinit(struct apple_rtkit *rtk)
+@@ -741,6 +769,7 @@ int apple_rtkit_reinit(struct apple_rtkit *rtk)
  	flush_workqueue(rtk->wq);
  
  	apple_rtkit_free_buffer(rtk, &rtk->ioreport_buffer);
@@ -85,7 +110,7 @@ index a863ae166..5a809b5e7 100644
  	apple_rtkit_free_buffer(rtk, &rtk->crashlog_buffer);
  	apple_rtkit_free_buffer(rtk, &rtk->oslog_buffer);
  	apple_rtkit_free_buffer(rtk, &rtk->syslog_buffer);
-@@ -945,6 +966,7 @@ void apple_rtkit_free(struct apple_rtkit *rtk)
+@@ -945,6 +974,7 @@ void apple_rtkit_free(struct apple_rtkit *rtk)
  	destroy_workqueue(rtk->wq);
  
  	apple_rtkit_free_buffer(rtk, &rtk->ioreport_buffer);
