@@ -1,0 +1,43 @@
+#!/bin/sh
+# Run a m1n1 image on the M4 Pro the way stage 1 chainloads stage 2: at the
+# running m1n1's own base (raw image, entry 0x800, so RVBAR is untouched),
+# through proxyclient's chainload.py. A m1n1 image without payloads comes up
+# in its USB proxy; this waits for it to answer on the debug link.
+#   tools/m1n1-try image.bin
+# Exit 0 when the new m1n1 answers, 1 when it does not within 40 s (then
+# `just restart` brings back the installed m1n1).
+set -eu
+cd "$(dirname "$0")/.." || exit 1
+img=$1
+[ -f "$img" ] || { echo "m1n1-try: $img not found" >&2; exit 2; }
+DEV=/dev/cu.kis-100000-ch-0
+
+# proxyclient assembles chainload.py's jump stub on the host; on macOS it
+# needs clang, lld and llvm-objcopy (here from the flake's pinned nixpkgs).
+mkdir -p build/toolchain
+for p in $(nix build --no-link --print-out-paths --inputs-from . \
+    nixpkgs#llvmPackages.clang-unwrapped nixpkgs#llvmPackages.lld nixpkgs#llvmPackages.llvm); do
+  for b in clang ld.lld llvm-objcopy llvm-objdump llvm-nm; do
+    [ -e "$p/bin/$b" ] && ln -sf "$p/bin/$b" "build/toolchain/$b"
+  done
+done
+export USE_CLANG=1 TOOLCHAIN="$PWD/build/toolchain/"
+
+M1N1_TOOL=chainload.py M1N1DEVICE=$DEV PYTHONUNBUFFERED=1 perl -e 'alarm 150; exec @ARGV' \
+  .venv-m1n1/bin/python tools/tether-boot.py -r "$img" > build/m1n1-try.log 2>&1 || true
+if grep -q Traceback build/m1n1-try.log; then
+  tail -n 4 build/m1n1-try.log; echo "m1n1-try: chainload.py failed before jumping" >&2; exit 2
+fi
+tail -n 2 build/m1n1-try.log
+# The new m1n1 logs over the same link after "Vectoring to next stage":
+# its banner, then "Running proxy..." once it is up.
+new=$(sed -n '/Vectoring to next stage/,$p' build/m1n1-try.log | grep -a "TTY>")
+printf '%s\n' "$new" | grep -a -m 1 "m1n1 v" || true
+if printf '%s\n' "$new" | grep -aq "Running proxy" &&
+   perl -e 'alarm 8; exec @ARGV' dune exec -- nixos-m4pro probe 2>&1 | grep -q "chip id 0x6040"; then
+  echo "m1n1-try: $img came up and answers on the debug link"
+  exit 0
+fi
+echo "m1n1-try: $img did not reach its proxy; its last lines:"
+printf '%s\n' "$new" | tail -n 15
+exit 1

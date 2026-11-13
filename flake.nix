@@ -17,6 +17,20 @@
       # The PARTUUID of the ESP (p4, nixos-boot). m4pro-install gives the
       # partition this UUID, and m1n1 stage 1 chainloads from it.
       espPartuuid = "c1689edb-3947-4ed4-ba55-696ead4f2833";
+
+      # m1n1 with the stage 1 config lines appended, as the Asahi installer
+      # writes them (asahi-installer src/m1n1.py): chainload stage 2 from the
+      # ESP. The four NUL bytes end m1n1's payload list; without them m1n1
+      # scans whatever memory follows the image when iBoot loads it, and on
+      # J614s it stopped before drawing its logo.
+      stage1 =
+        m1n1:
+        nixpkgs.legacyPackages.aarch64-linux.runCommand "m1n1-stage1.bin" { } ''
+          cat ${m1n1}/lib/m1n1/m1n1.bin > $out
+          printf 'chainload=%s;m1n1/boot.bin\nchosen.asahi,efi-system-partition=%s\n' \
+            ${espPartuuid} ${espPartuuid} >> $out
+          printf '\0\0\0\0' >> $out
+        '';
     in
     {
       packages = each (
@@ -53,11 +67,10 @@
 
             # Stage 1 for the macostest volume: the release m1n1 with its
             # config lines appended, as the Asahi installer writes them.
-            m1n1-stage1 = pkgs.runCommand "m1n1-stage1.bin" { } ''
-              cat ${self.packages.aarch64-linux.m1n1}/lib/m1n1/m1n1.bin > $out
-              printf 'chainload=%s;m1n1/boot.bin\nchosen.asahi,efi-system-partition=%s\n' \
-                ${espPartuuid} ${espPartuuid} >> $out
-            '';
+            m1n1-stage1 = stage1 self.packages.aarch64-linux.m1n1;
+            # The same with the debug m1n1, which prints its log on the
+            # screen: for finding where a chainload stops.
+            m1n1-stage1-dev = stage1 self.packages.aarch64-linux.m1n1-dev;
 
             # Everything the host sends m1n1 to boot the J614s
             # (tools/tether-boot.py, `just boot-ram` and `just boot-disk`):

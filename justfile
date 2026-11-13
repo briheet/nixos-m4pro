@@ -115,6 +115,18 @@ flash: flash-partition flash-format flash-system
 
 # --- m1n1 on the macostest volume (from 1TR recoveryOS) ----------------------
 
+# Recovery path for a broken stage 2: serve m1n1-dev.bin (port 8001) to copy onto the ESP from recoveryOS.
+stage2-serve: (m1n1 "dev")
+    #!/usr/bin/env bash
+    set -euo pipefail
+    addr=$(ipconfig getifaddr en11)
+    echo "in recoveryOS Terminal:"
+    echo "  diskutil mount disk0s4 && mkdir -p /Volumes/NIXBOOT/m1n1"
+    echo "  curl -o /Volumes/NIXBOOT/m1n1/boot.bin http://$addr:8001/m1n1-dev.bin"
+    echo "  shasum -a 256 /Volumes/NIXBOOT/m1n1/boot.bin   # $(shasum -a 256 build/out/m1n1-dev.bin | cut -d' ' -f1)"
+    echo "  diskutil unmount /Volumes/NIXBOOT"
+    exec .venv-m1n1/bin/python -m http.server 8001 -b "$addr" -d build/out
+
 # Stage 2 is not served: NixOS installs it on the ESP (nixos/m1n1-boot.nix).
 # Serve the kmutil script that installs a m1n1 variant (default stage 1) on the USB link (en11).
 m1n1-serve variant="stage1": (m1n1 variant)

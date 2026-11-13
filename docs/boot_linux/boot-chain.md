@@ -21,13 +21,23 @@ Each stage has its own job, and only stage 1 needs a trip to recoveryOS. Stage 2
 | # | Step | Status |
 |---|---|---|
 | 1 | **m1n1 stage 1**, release build with chainloading: `just m1n1` builds it from the pinned source with m1n1/patches. It gets one config line, `chainload=<nvme0n1p4 PARTUUID>;m1n1/boot.bin`, and is installed on `macostest` from 1TR recoveryOS with `kmutil` (`just m1n1-serve`). | Builds. Config line and install not done. |
-| 2 | **Chainloading on M4.** Stage 1 starts stage 2 in place. The proxy's `chainload.py` faulted on this Mac (RVBAR is locked once m1n1 has run), so the in-m1n1 chainload path has to be checked on T6040 before anything relies on it. | Not tested |
+| 2 | **Chainloading on M4.** Stage 1 starts stage 2 in place. | Works (see Findings); blocked on ANS sleep for Linux |
 | 3 | **m1n1 stage 2 as part of the NixOS system**: `m1n1/boot.bin` = m1n1 + `t6040-j614s.dtb` + U-Boot, written to the ESP by the boot loader (as nixos-apple-silicon's `boot-m1n1` module does with `boot.loader.systemd-boot.extraFiles`). | Not started |
 | 4 | **U-Boot for the M4 Pro**: Asahi's U-Boot (`apple_m1_defconfig`) takes its device tree from m1n1. It needs the M4 NVMe changes this kernel needed (controller through ADT reg 9 via the device tree, and the I/O queue registers from Linux commit 304bc392), plus a way to read the keyboard for the menu (the MTP dockchannel HID). | Not started |
 | 5 | **EFI kernel and systemd-boot**: `CONFIG_EFI` and `CONFIG_EFI_STUB` in kernel/m4pro-nixos.config, then `boot.loader.systemd-boot.enable = true` with `boot.loader.efi.canTouchEfiVariables = false` in nixos/disk.nix, replacing the extlinux entry. | Not started (`CONFIG_EFI` is off) |
 | 6 | **Name in the startup picker**: rename the stub volume in macOS (`diskutil rename macostest NixOS`) so the picker shows NixOS next to Macintosh HD. | Optional |
 
-Steps 1 and 2 decide whether the rest can work, so they come first. A stage 2 that just prints and returns to the proxy is enough to test chainloading, and it costs one recoveryOS trip.
+Steps 1 and 2 decide whether the rest can work, so they come first.
+
+## Findings (2026-11-13)
+
+Tested without recovery trips with `tools/m1n1-try`, which runs an m1n1 image the way stage 1 starts stage 2 (proxyclient `chainload.py -r`: same base, entry 0x800, RVBAR untouched) and shows the new m1n1's log on the debug link.
+
+- **Stage 1 must end its config lines with four NUL bytes**, as asahi-installer `src/m1n1.py` writes them. Without them m1n1 scans past the image for payloads when iBoot loads it; on J614s every such image stopped before drawing its logo, and iBoot fell back to the recovery/startup-disk screen. `m1n1-stage1` in the flake does this now.
+- m1n1 is built with gcc 14 and `hardeningDisable = [ "all" ]` (`pkgs/m1n1.nix`), like other firmware in nixpkgs; the code then matches the Docker build except for nixpkgs' appended logo.
+- **Chainloading works on T6040.** `m1n1-stage1` (release) initialises ANS through ADT reg 9, finds the ESP by PARTUUID, loads `m1n1/boot.bin` (5373968 bytes) and stage 2 comes up in its proxy.
+- **Linux's NVMe fails after any ANS sleep.** m1n1 puts ANS to sleep and resets it after reading the ESP; Linux then cold-boots it and ANS crashes with an SError (FAR 0x41f008000 in ANS's address space, not in the ADT). The same happens with Linux alone: unbinding and rebinding `nvme-apple` makes ANS crash while entering IOP sleep (`NVMe shutdown start ... saveCtx`, AP quiesce acked, then SError at 0x41f020000). Direct boots only work because iBoot leaves ANS running and Linux wakes it instead of cold-booting it. Ruled out: the PMGR reset sequence, `apcie_sys_st0` state, NVMe controller shutdown, and the NVMe/NVMMU/IOQ registers m1n1 leaves set.
+- Lead: on M3 and later Asahi routes ANS power through PMP (`pmp_report_ans`, `drivers/pmdomain/apple/pmp-report.c`, `drivers/soc/apple/pmp.rs`). The M4 Pro has no PMP description yet. Until ANS can sleep and cold-boot, stage 1 cannot be installed: Linux would lose the SSD on every boot through it. A stage 2 that just prints and returns to the proxy is enough to test chainloading, and it costs one recoveryOS trip.
 
 ## Choosing an OS
 

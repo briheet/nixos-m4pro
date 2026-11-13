@@ -3,11 +3,19 @@
 #
 #   release = true   RELEASE=1 CHAINLOADING=1, as nixpkgs and the Asahi
 #                    installer build it: the stage 1 for the boot chain.
-#   release = false  the debug build installed on macostest during bring-up
+#   release = false  the debug build (chainloading too), as installed on
+#                    macostest during bring-up
 #                    (early UART at the T6040 address, proxy on debug USB).
-{ lib, m1n1, fetchFromGitHub, release ? true }:
+{ lib, m1n1, gcc14Stdenv, fetchFromGitHub, release ? true }:
 
-m1n1.overrideAttrs (old: rec {
+# Built like the m1n1 that first ran on this Mac (Debian trixie, gcc 14, no
+# extra flags). nixpkgs' cc wrapper adds hardening flags by default
+# (-fzero-call-used-regs, stack clash probes, ...), meant for Linux programs;
+# with them and gcc 16, m1n1 stopped before drawing its logo on J614s.
+# Firmware in nixpkgs (U-Boot, ATF) is built with hardening off too.
+(m1n1.override { stdenv = gcc14Stdenv; }).overrideAttrs (old: rec {
+  hardeningDisable = [ "all" ];
+
   version = "2.0.0-unstable-2026-11-04-m4pro";
 
   src = fetchFromGitHub {
@@ -32,7 +40,7 @@ m1n1.overrideAttrs (old: rec {
     if release then
       old.makeFlags
     else
-      [ "ARCH=" "EXTRA_CFLAGS=-DTARGET=0x6040" ] ++ lib.filter (lib.hasPrefix "LOGO=") old.makeFlags;
+      [ "ARCH=" "CHAINLOADING=1" "EXTRA_CFLAGS=-DTARGET=0x6040" ] ++ lib.filter (lib.hasPrefix "LOGO=") old.makeFlags;
 
   # The tests exercise the Python proxy client, not the binary.
   doCheck = false;
