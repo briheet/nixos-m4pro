@@ -1,0 +1,95 @@
+From 89f008d1a7ebf5f11cbc4a9588c52bad6d380c85 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 04:34:57 +0000
+Subject: [PATCH 3/3] soc: apple: rtkit: Serve buffer requests on system
+ endpoint 7
+
+The T6040 PMP starts endpoint 7, asks for a 2-page buffer there and does not
+acknowledge its IOP power state until it gets one, so the PMP driver timed
+out. Start the endpoint and answer its buffer requests like the ioreport
+ones.
+---
+ drivers/soc/apple/rtkit-internal.h |  1 +
+ drivers/soc/apple/rtkit.c          | 22 ++++++++++++++++++++++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/drivers/soc/apple/rtkit-internal.h b/drivers/soc/apple/rtkit-internal.h
+index c82065a8b..9580d54d0 100644
+--- a/drivers/soc/apple/rtkit-internal.h
++++ b/drivers/soc/apple/rtkit-internal.h
+@@ -44,6 +44,7 @@ struct apple_rtkit {
+ 
+ 	struct apple_rtkit_shmem ioreport_buffer;
+ 	struct apple_rtkit_shmem crashlog_buffer;
++	struct apple_rtkit_shmem sys7_buffer;
+ 	struct apple_rtkit_shmem oslog_buffer;
+ 
+ 	struct apple_rtkit_shmem syslog_buffer;
+diff --git a/drivers/soc/apple/rtkit.c b/drivers/soc/apple/rtkit.c
+index a863ae166..5a809b5e7 100644
+--- a/drivers/soc/apple/rtkit.c
++++ b/drivers/soc/apple/rtkit.c
+@@ -21,6 +21,11 @@ enum {
+ 	APPLE_RTKIT_EP_SYSLOG = 2,
+ 	APPLE_RTKIT_EP_DEBUG = 3,
+ 	APPLE_RTKIT_EP_IOREPORT = 4,
++	/*
++	 * Seen on the T6040 PMP: asks for a buffer at boot and does not finish
++	 * booting (no IOP power ack) until it gets one. Its use is unknown.
++	 */
++	APPLE_RTKIT_EP_SYS7 = 7,
+ 	APPLE_RTKIT_EP_OSLOG = 8,
+ };
+ 
+@@ -190,6 +195,7 @@ static void apple_rtkit_management_rx_epmap(struct apple_rtkit *rtk, u64 msg)
+ 		case APPLE_RTKIT_EP_CRASHLOG:
+ 		case APPLE_RTKIT_EP_DEBUG:
+ 		case APPLE_RTKIT_EP_IOREPORT:
++		case APPLE_RTKIT_EP_SYS7:
+ 		case APPLE_RTKIT_EP_OSLOG:
+ 			dev_dbg(rtk->dev,
+ 				"RTKit: Starting system endpoint 0x%02x\n", ep);
+@@ -397,6 +403,17 @@ static void apple_rtkit_crashlog_rx(struct apple_rtkit *rtk, u64 msg)
+ 		rtk->ops->crashed(rtk->cookie, bfr, bfr ? rtk->crashlog_buffer.size : 0);
+ }
+ 
++static void apple_rtkit_sys7_rx(struct apple_rtkit *rtk, u64 msg)
++{
++	u8 type = FIELD_GET(APPLE_RTKIT_SYSLOG_TYPE, msg);
++
++	if (type == APPLE_RTKIT_BUFFER_REQUEST)
++		apple_rtkit_common_rx_get_buffer(rtk, &rtk->sys7_buffer,
++						 APPLE_RTKIT_EP_SYS7, msg);
++	else
++		dev_warn(rtk->dev, "RTKit: Unknown EP7 message: %llx\n", msg);
++}
++
+ static void apple_rtkit_ioreport_rx(struct apple_rtkit *rtk, u64 msg)
+ {
+ 	u8 type = FIELD_GET(APPLE_RTKIT_SYSLOG_TYPE, msg);
+@@ -542,6 +559,9 @@ static void apple_rtkit_rx_work(struct work_struct *work)
+ 	case APPLE_RTKIT_EP_IOREPORT:
+ 		apple_rtkit_ioreport_rx(rtk, rtk_work->msg);
+ 		break;
++	case APPLE_RTKIT_EP_SYS7:
++		apple_rtkit_sys7_rx(rtk, rtk_work->msg);
++		break;
+ 	case APPLE_RTKIT_EP_OSLOG:
+ 		apple_rtkit_oslog_rx(rtk, rtk_work->msg);
+ 		break;
+@@ -741,6 +761,7 @@ int apple_rtkit_reinit(struct apple_rtkit *rtk)
+ 	flush_workqueue(rtk->wq);
+ 
+ 	apple_rtkit_free_buffer(rtk, &rtk->ioreport_buffer);
++	apple_rtkit_free_buffer(rtk, &rtk->sys7_buffer);
+ 	apple_rtkit_free_buffer(rtk, &rtk->crashlog_buffer);
+ 	apple_rtkit_free_buffer(rtk, &rtk->oslog_buffer);
+ 	apple_rtkit_free_buffer(rtk, &rtk->syslog_buffer);
+@@ -945,6 +966,7 @@ void apple_rtkit_free(struct apple_rtkit *rtk)
+ 	destroy_workqueue(rtk->wq);
+ 
+ 	apple_rtkit_free_buffer(rtk, &rtk->ioreport_buffer);
++	apple_rtkit_free_buffer(rtk, &rtk->sys7_buffer);
+ 	apple_rtkit_free_buffer(rtk, &rtk->crashlog_buffer);
+ 	apple_rtkit_free_buffer(rtk, &rtk->oslog_buffer);
+ 	apple_rtkit_free_buffer(rtk, &rtk->syslog_buffer);
