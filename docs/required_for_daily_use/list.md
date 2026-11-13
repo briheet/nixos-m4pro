@@ -31,9 +31,9 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 | **Phase 3: a usable laptop** | | | | |
 | 13 | Keyboard and trackpad | `mtp` coprocessor, `dockchannel-mtp`, `hid-transport,mux` | TBA | Keyboard works; trackpad needs the SMC reset GPIO |
 | 14 | Internal display | `dcp`, `disp0,t604x`, Parade `DP855` TCON on `spi4` | TBA | Not started |
-| 15 | Battery, charger, power button, lid | `smc` coprocessor, `smc-gpio0` | TBA | Not started |
+| 15 | Battery, charger, power button, lid | `smc` coprocessor, `smc-gpio0` | TBA | Done: SMC (macsmc) with RTC, battery/AC, power button and lid, clean reboot/power-off; PMU boot counters cleared on each boot (kernel patch 0025) |
 | 16 | Keyboard backlight | `fpwm0` | TBA | Not started |
-| 17 | CPU frequency, idle, suspend | 3 clusters, PMGR | TBA | m1n1 programs the clusters |
+| 17 | CPU frequency, idle, suspend | 3 clusters, PMGR | TBA | Idle: cores sleep in WFI with their registers saved (kernel patch 0024); m1n1 programs the clusters; no cpufreq or suspend yet |
 | 18 | USB-C data and charging | `usb-drd,t6040` ×3, `atc-phy,t6040` ×4, `usbc,sn201202x` on SPMI | TBA | Not started |
 | **Phase 4: networking** | | | | |
 | 19 | PCIe and DART for `apcie0` | `apcie,t6040`, `dart,t8110` | TBA | 10 power domains on; DART still raises SError |

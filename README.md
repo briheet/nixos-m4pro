@@ -89,4 +89,4 @@ Every boot is recorded under `build/runs/<time>/` (console log with timestamps, 
 
 ## Known gaps
 
-No real-time clock (the clock starts at a fixed date until the SMC driver), no network, no trackpad (its reset line is on the SMC), no battery, power button or lid. The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).
+No network, no trackpad (it needs its firmware from macOS and its analog front end powered through an SMC key), no suspend or CPU frequency scaling. The internal keyboard does not work in U-Boot's menu yet. The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).

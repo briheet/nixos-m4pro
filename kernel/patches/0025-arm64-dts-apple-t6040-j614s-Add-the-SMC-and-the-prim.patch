@@ -1,0 +1,178 @@
+From a0d00aba72397eec971eeeabb32c0c463a1d126f Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 11:10:47 +0000
+Subject: [PATCH 25/25] arm64: dts: apple: t6040-j614s: Add the SMC and the
+ primary PMU on SPMI
+
+The SMC (ADT /arm-io/smc) with its ASC mailbox, RTC, reboot and GPIO
+children, and the primary SPMI bus with the abbey PMU (USID 0xe) and the
+nvmem cells its ADT node gives: pm_setting (info-pm_setting 0x2001),
+rtc_offset (info-rtc_scrpad 0x2100) and the boot counters in the legacy
+scratchpad (info-leg_scrpad 0xf800). macsmc-reboot clears iBoot's failed
+boot counter on each boot. The SMC SRAM address (0x50de70000) is the one
+aurora-silicon measured on J614s.
+---
+ arch/arm64/boot/dts/apple/t6040-j614s.dts |  18 ++++
+ arch/arm64/boot/dts/apple/t6041.dtsi      | 110 ++++++++++++++++++++++
+ 2 files changed, 128 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/apple/t6040-j614s.dts b/arch/arm64/boot/dts/apple/t6040-j614s.dts
+index 7a16a5716..77114cb09 100644
+--- a/arch/arm64/boot/dts/apple/t6040-j614s.dts
++++ b/arch/arm64/boot/dts/apple/t6040-j614s.dts
+@@ -32,6 +32,24 @@ &mtp_mt {
+ 	firmware-name = "apple/tpmtfw-j614s.bin";
+ };
+ 
++/ {
++	aliases {
++		rtc0 = &smc_rtc;
++	};
++};
++
++&smc_mbox {
++	status = "okay";
++};
++
++&smc {
++	status = "okay";
++};
++
++&nub_spmi0 {
++	status = "okay";
++};
++
+ /*
+  * Console for bring-up: the dockchannel UART FIFO, which the host reads over
+  * debug USB. uart0 is not routed to the host on this machine. reg is the
+diff --git a/arch/arm64/boot/dts/apple/t6041.dtsi b/arch/arm64/boot/dts/apple/t6041.dtsi
+index d39c7a024..bce1a1d76 100644
+--- a/arch/arm64/boot/dts/apple/t6041.dtsi
++++ b/arch/arm64/boot/dts/apple/t6041.dtsi
+@@ -7,6 +7,7 @@
+ 
+ #include <dt-bindings/interrupt-controller/apple-aic.h>
+ #include <dt-bindings/pinctrl/apple.h>
++#include <dt-bindings/spmi/spmi.h>
+ 
+ / {
+ 	compatible = "apple,t6041", "apple,arm-platform";
+@@ -696,6 +697,115 @@ ans_mbox: mbox@409608000 {
+ 			#mbox-cells = <0>;
+ 		};
+ 
++		/*
++		 * SMC: ADT /arm-io/smc at 0x50c600000, its ASC mailbox at +0x8000
++		 * (interrupts 996-999). The SRAM window is not in the ADT; the
++		 * SMC firmware asks for its buffer at 0x50de70000 (measured on
++		 * J614s by aurora-silicon).
++		 */
++		smc_mbox: mbox@50c608000 {
++			compatible = "apple,t6041-asc-mailbox", "apple,asc-mailbox-v4";
++			reg = <0x5 0x0c608000 0x0 0x4000>;
++			interrupt-parent = <&aic>;
++			interrupts = <AIC_IRQ 996 IRQ_TYPE_LEVEL_HIGH>,
++				     <AIC_IRQ 997 IRQ_TYPE_LEVEL_HIGH>,
++				     <AIC_IRQ 998 IRQ_TYPE_LEVEL_HIGH>,
++				     <AIC_IRQ 999 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "send-empty", "send-not-empty",
++					  "recv-empty", "recv-not-empty";
++			#mbox-cells = <0>;
++			status = "disabled";
++		};
++
++		smc: smc@50c600000 {
++			compatible = "apple,t6041-smc", "apple,smc";
++			reg = <0x5 0x0c600000 0x0 0x4000>,
++			      <0x5 0x0de70000 0x0 0x100000>;
++			reg-names = "smc", "sram";
++			mboxes = <&smc_mbox>;
++			status = "disabled";
++
++			smc_gpio: gpio {
++				compatible = "apple,smc-gpio";
++				gpio-controller;
++				#gpio-cells = <2>;
++			};
++
++			smc_reboot: reboot {
++				compatible = "apple,smc-reboot";
++				nvmem-cells = <&shutdown_flag>, <&boot_stage>,
++					      <&boot_error_count>, <&panic_count>,
++					      <&pm_setting>;
++				nvmem-cell-names = "shutdown_flag", "boot_stage",
++						   "boot_error_count", "panic_count",
++						   "pm_setting";
++			};
++
++			smc_rtc: rtc {
++				compatible = "apple,smc-rtc";
++				nvmem-cells = <&rtc_offset>;
++				nvmem-cell-names = "rtc_offset";
++			};
++		};
++
++		/*
++		 * Primary SPMI bus, ADT /arm-io/nub-spmi0 (0x509014000), with the
++		 * abbey PMU at USID 0xe (ADT spmi-abbeyL1). The cells come from
++		 * its info-pm_setting (0x2001), info-rtc_scrpad (0x2100) and
++		 * info-leg_scrpad (0xf800). iBoot counts failed boots in
++		 * boot_error_count and stops booting the volume past a limit;
++		 * macsmc-reboot clears it on every boot.
++		 */
++		nub_spmi0: spmi@509014000 {
++			compatible = "apple,t6041-spmi", "apple,spmi";
++			reg = <0x5 0x09014000 0x0 0x100>;
++			#address-cells = <2>;
++			#size-cells = <0>;
++			status = "disabled";
++
++			pmu1: pmic@e {
++				compatible = "apple,abbey-pmic", "apple,spmi-nvmem";
++				reg = <0xe SPMI_USID>;
++
++				nvmem-layout {
++					compatible = "fixed-layout";
++					#address-cells = <1>;
++					#size-cells = <1>;
++
++					pm_setting: pm-setting@2001 {
++						reg = <0x2001 0x1>;
++					};
++
++					rtc_offset: rtc-offset@2100 {
++						reg = <0x2100 0x6>;
++					};
++
++					boot_stage: boot-stage@f801 {
++						reg = <0xf801 0x1>;
++					};
++
++					boot_error_count: boot-error-count@f802,0 {
++						reg = <0xf802 0x1>;
++						bits = <0 4>;
++					};
++
++					panic_count: panic-count@f802,4 {
++						reg = <0xf802 0x1>;
++						bits = <4 4>;
++					};
++
++					boot_error_stage: boot-error-stage@f803 {
++						reg = <0xf803 0x1>;
++					};
++
++					shutdown_flag: shutdown-flag@f80f,3 {
++						reg = <0xf80f 0x1>;
++						bits = <3 1>;
++					};
++				};
++			};
++		};
++
+ 		sart: sart@40dc50000 {
+ 			compatible = "apple,t6041-sart", "apple,t6000-sart";
+ 			reg = <0x4 0x0dc50000 0x0 0xc000>;
+-- 
+2.47.0
+

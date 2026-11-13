@@ -6,7 +6,7 @@
 #   release = false  the debug build (chainloading too), as installed on
 #                    macostest during bring-up
 #                    (early UART at the T6040 address, proxy on debug USB).
-{ lib, m1n1, gcc14Stdenv, fetchFromGitHub, release ? true }:
+{ lib, m1n1, gcc14Stdenv, fetchFromGitHub, imagemagick, nixos-icons, release ? true }:
 
 # Built like the m1n1 that first ran on this Mac (Debian trixie, gcc 14, no
 # extra flags). nixpkgs' cc wrapper adds hardening flags by default
@@ -44,6 +44,19 @@
       old.makeFlags
     else
       [ "ARCH=" "CHAINLOADING=1" "EXTRA_CFLAGS=-DTARGET=0x6040" ];
+
+  # The NixOS snowflake instead of the Asahi logo: the logos m1n1 compiles
+  # in (raw RGBA, 48/128/256 px squares on black), regenerated from
+  # nixos-icons. Same sizes, so the image size does not change.
+  nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ imagemagick ];
+  postPatch = (old.postPatch or "") + ''
+    for s in 48 128 256; do
+      magick ${nixos-icons}/share/icons/hicolor/256x256/apps/nix-snowflake.png \
+        -background black -flatten -resize ''${s}x''${s} -gravity center -extent ''${s}x''${s} \
+        -depth 8 rgba:data/bootlogo_$s.bin
+      test "$(stat -c %s data/bootlogo_$s.bin)" -eq $((s * s * 4))
+    done
+  '';
 
   # The tests exercise the Python proxy client, not the binary.
   doCheck = false;
