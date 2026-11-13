@@ -1,0 +1,60 @@
+From c85b635dc635cbbcd063d6b0a1c6aca26a2dcfdd Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 13:00:11 +0530
+Subject: [PATCH] hv: Allocate the nested-virtualization VNCR pages on the heap
+
+nvMem and anvMem (1 MiB for 32 CPUs) sat in .bss, which the raw image
+carries as zeros. That pushed a chainloading m1n1 to 0x4f0000 bytes, and
+iBoot on T6040 (mBoot-20457.41.3) panics loading a boot object that size
+(seen on its serial output over debug USB); 0x4d0000 boots. Allocate the
+pages when nested virtualization is enabled; the image shrinks by 1 MiB.
+---
+ src/hv/hv.c | 18 ++++++++++++++++--
+ 1 file changed, 16 insertions(+), 2 deletions(-)
+
+diff --git a/src/hv/hv.c b/src/hv/hv.c
+index 62724b81..6bc7d516 100644
+--- a/src/hv/hv.c
++++ b/src/hv/hv.c
+@@ -7,6 +7,7 @@
+ #include "display.h"
+ #include "gxf.h"
+ #include "hv_sprr.h"
++#include "malloc.h"
+ #include "memory.h"
+ #include "pcie.h"
+ #include "smp.h"
+@@ -117,8 +118,14 @@ struct hv_secondary_info_t {
+ 
+ static struct hv_secondary_info_t hv_secondary_info;
+ 
+-u64 nvMem[MAX_CPUS][0x800] __attribute__((aligned(0x4000)));
+-u64 anvMem[MAX_CPUS][0x800] __attribute__((aligned(0x4000)));
++/*
++ * VNCR pages for nested virtualization, one per CPU. Allocated when NV is
++ * enabled rather than in .bss: the raw image carries .bss as zeros, and these
++ * 1 MiB pushed a chainloading m1n1 past what iBoot loads as a boot object on
++ * T6040 (iBoot panics before m1n1 runs).
++ */
++static u64 (*nvMem)[0x800];
++static u64 (*anvMem)[0x800];
+ 
+ static void hv_enable_sme_zt0(void)
+ {
+@@ -174,6 +181,13 @@ void hv_init(void)
+     if (hv_sptm_mode == SPTM_NESTED_VIRT) {
+         printf("Enabling NV\n");
+         hv_write_hcr(mrs(SYS_HCR_EL2) | HCR_NV2 | HCR_NV);
++        if (!nvMem) {
++            nvMem = memalign(0x4000, sizeof(*nvMem) * MAX_CPUS);
++            anvMem = memalign(0x4000, sizeof(*anvMem) * MAX_CPUS);
++            assert(nvMem && anvMem);
++            memset(nvMem, 0, sizeof(*nvMem) * MAX_CPUS);
++            memset(anvMem, 0, sizeof(*anvMem) * MAX_CPUS);
++        }
+         msr(VNCR_EL2, &nvMem[0]);
+         msr(SYS_IMP_APL_AVNCR_EL2, &anvMem[0]);
+     }
+-- 
+2.56.0
+

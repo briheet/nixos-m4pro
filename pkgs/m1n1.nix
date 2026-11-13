@@ -13,7 +13,10 @@
 # (-fzero-call-used-regs, stack clash probes, ...), meant for Linux programs;
 # with them and gcc 16, m1n1 stopped before drawing its logo on J614s.
 # Firmware in nixpkgs (U-Boot, ATF) is built with hardening off too.
-(m1n1.override { stdenv = gcc14Stdenv; }).overrideAttrs (old: rec {
+# m1n1's built-in logo rather than nixpkgs' custom-logo payload: the payload
+# is appended after the image, and with it no Nix build of m1n1 came up as
+# iBoot's boot object on J614s, while the same code chainloaded fine.
+(m1n1.override { stdenv = gcc14Stdenv; customLogo = null; }).overrideAttrs (old: rec {
   hardeningDisable = [ "all" ];
 
   version = "2.0.0-unstable-2026-11-04-m4pro";
@@ -40,7 +43,7 @@
     if release then
       old.makeFlags
     else
-      [ "ARCH=" "CHAINLOADING=1" "EXTRA_CFLAGS=-DTARGET=0x6040" ] ++ lib.filter (lib.hasPrefix "LOGO=") old.makeFlags;
+      [ "ARCH=" "CHAINLOADING=1" "EXTRA_CFLAGS=-DTARGET=0x6040" ];
 
   # The tests exercise the Python proxy client, not the binary.
   doCheck = false;
