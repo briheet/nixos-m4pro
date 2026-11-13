@@ -41,7 +41,7 @@ H: Handlers=sysrq kbd leds event1
 
 ## Trackpad (2026-11-13, in progress)
 
-- Firmware: `apple/tpmtfw-j614s.bin` (79,960 bytes, `HIDF`) converted with Asahi's `asahi_firmware.multitouch` from `J614s_Multitouch.im4p` in the host Mac's macOS restore bundle (`/System/Volumes/Preboot/*/restore/Firmware/`). It is packed into the initramfs under `/lib/firmware` by `tools/build-initramfs.sh` from `build/firmware/` (not in git).
+- Firmware: `apple/tpmtfw-j614s.bin` (79,960 bytes, `HIDF`) converted with Asahi's `asahi_firmware.multitouch` from `J614s_Multitouch.im4p` in the host Mac's macOS restore bundle (`/System/Volumes/Preboot/*/restore/Firmware/`); now `tools/mac-firmware` does this.
 - Patch 0008 describes the `stm` interface. With it the devices report `05AC:0359`; the keyboard binds to `hid-apple` and the trackpad to `hid-magicmouse` (`CONFIG_HID_MAGICMOUSE`).
 - Opening the trackpad's event device starts the interface: `Sending firmware for multi-touch`, then the MTP rejects the interface reset (`output report 0x40 to iface 0 (comm) failed with err 0xe00002c2`, kIOReturnBadArgument) and the start times out.
 - The ADT `multi-touch` node has `function-afe-reset`: the AFE reset is an SMC GPIO (on t602x `apple,afe-reset-gpios = <&smc_gpio 25 ...>`). This waits for the SMC driver.
@@ -54,6 +54,6 @@ The trackpad reports multitouch (ABS_MT position, size, orientation) through `hi
 - **Trackpad power through the SMC.** The ADT `multi-touch` node's `function-afe-reset` is SMC function `pKW4` on key `gp1c` with `0x10000`; `apple,afe-smc = <&smc>` makes the driver write it around the reset.
 - **The MTP DART streams** (kernel patch 0027). The ADT `dart-mtp` mapper is stream 0 and its `remap` folds streams 1-3 onto it, window `vm-base` 0x10000004000, `vm-size` 0xffff0000. The device tree mapped only stream 1. That went unnoticed while the MTP did no DMA into our memory (its RTKit buffers sit in its own SRAM, keyboard reports come through the FIFO). The firmware upload and the receive ring are DMA, so the MTP never read the trackpad firmware and the start timed out. All four streams now share the tables.
 
-The firmware (`tpmtfw-j614s.bin`, from Apple) is not in the repo: `pkgs/j614s-firmware.nix` pins it by hash (`requireFile`), and it is added to the builder's store once with `nix-store --add-fixed sha256 build/firmware/apple/tpmtfw-j614s.bin`. It is also in the initrd, because the trackpad starts before the root filesystem is mounted.
+The firmware (`tpmtfw-j614s.bin`, from Apple) is not in the repo: `pkgs/j614s-firmware.nix` pins it by hash (`requireFile`), and `tools/mac-firmware` converts it from `J614s_Multitouch.im4p` in a Mac's macOS restore bundle and adds it to the builder's store (the conversion is deterministic). It is also in the initrd, because the trackpad starts before the root filesystem is mounted.
 
 Debugging this: `tools/uboot-boot -- dockchannel_hid.dyndbg=+p` (the kernel has dynamic debug).

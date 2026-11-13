@@ -21,14 +21,16 @@ default:
 # --- host setup ------------------------------------------------------------
 
 # Create the builder: Nix in an aarch64-linux container, with the store on a volume.
+# Two jobs of six cores each: with every core of an 18-core host, the C++
+# builds (Hyprland) run Docker's default 8 GB VM out of memory.
 builder:
     if docker inspect {{builder}} >/dev/null 2>&1; then \
       docker start {{builder}} >/dev/null; \
     else \
       docker run -d --name {{builder}} -v nixos-m4pro-nix:/nix -v nixos-m4pro-src:/src \
         -v "$PWD":/work -w /work {{nix_image}} sleep infinity >/dev/null; \
-      docker exec {{builder}} sh -c 'mkdir -p /etc/nix && printf "experimental-features = nix-command flakes\nsandbox = false\nmax-jobs = auto\ncores = 0\nfilter-syscalls = false\n" > /etc/nix/nix.conf'; \
     fi
+    docker exec {{builder}} sh -c 'mkdir -p /etc/nix && printf "experimental-features = nix-command flakes\nsandbox = false\nmax-jobs = 2\ncores = 6\nfilter-syscalls = false\n" > /etc/nix/nix.conf'
     docker exec {{builder}} sh -c 'git config --global --add safe.directory /work; uname -m; nix --version'
 
 # Host tools: m1n1 (pinned, with m1n1/patches) in upstream/m1n1, its Python deps, the OCaml tools.
@@ -92,14 +94,16 @@ dev-boot system="disk":
     for f in Image.gz t6040-j614s.dtb {{system}}-initrd {{system}}-cmdline; do
       test -f build/out/$f || { echo "build/out/$f missing; run just build" >&2; exit 1; }
     done
-    pkill -f 'tools/m4console|tools/linux.py' || true
+    pkill -f 'tools/m4console|tools/linux' || true
+    # linux.py with large buffers outside m1n1's 128 MiB heap (the installer's
+    # initrd carries the whole system).
     M1N1DEVICE=$(ls {{m1n1_usb}}) PYTHONUNBUFFERED=1 nohup .venv-m1n1/bin/python \
-      upstream/m1n1/proxyclient/tools/linux.py build/out/Image.gz build/out/t6040-j614s.dtb \
+      tools/linux-big.py build/out/Image.gz build/out/t6040-j614s.dtb \
       build/out/{{system}}-initrd -b "$(cat build/out/{{system}}-cmdline)" < /dev/null > build/linux-py.out 2>&1 &
     # Linux has started once m1n1's USB device goes away.
-    for i in $(seq 120); do ls {{m1n1_usb}} >/dev/null 2>&1 || break; sleep 1; done
+    for i in $(seq 900); do ls {{m1n1_usb}} >/dev/null 2>&1 || break; sleep 1; done
     ls {{m1n1_usb}} >/dev/null 2>&1 && { echo "m1n1 did not hand over:" >&2; tail -n 5 build/linux-py.out >&2; exit 1; }
-    pkill -f tools/linux.py || true
+    pkill -f 'tools/linux' || true
     echo "kernel started after $i s; switching to debug USB for the console"
     just connect
     nohup .venv-m1n1/bin/python tools/m4console --pad64 {{port}} > build/m4console.out 2>&1 &

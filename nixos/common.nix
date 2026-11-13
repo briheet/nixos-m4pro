@@ -59,6 +59,14 @@
     "brcm/brcmbt4388c2-apple,mriya-u.ptb"
   ];
 
+  # A large console font for the 3024x1964 panel (Terminus 32 px), set from
+  # the initrd on.
+  console = {
+    earlySetup = true;
+    packages = [ pkgs.terminus_font ];
+    font = "ter-v32n";
+  };
+
   # Logins. The screen asks for a password. Root is locked, but logs in by
   # itself on the debug-USB console (ttyDC0): reaching it takes the cable to
   # the host, and tools/m4sh drives the machine through it.

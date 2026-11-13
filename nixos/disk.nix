@@ -16,6 +16,7 @@
   imports = [
     ./common.nix
     ./m1n1-boot.nix
+    ./desktop.nix
   ];
 
   fileSystems."/" = {

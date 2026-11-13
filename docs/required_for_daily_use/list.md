@@ -26,7 +26,7 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 | 8 | NVMe | `ans` (`iop,ascwrap-v6`, with an `ans-pcie` child), `sart,coastguard` | WIP | Done: ANS through ADT reg 9, mainline M4 driver change |
 | 9 | Disk layout | 500 GB `APPLE SSD AP0512Z`, APFS only | — | Done: p4 `nixos-boot`, p5 `nixos` after a macOS resize; `just flash` |
 | 10 | Boot chain from disk | m1n1 stage 1 → stage 2 → U-Boot → extlinux | Installer: no | Done: boots from power-on without the host; keyboard in U-Boot left (docs/boot_linux/boot-chain.md) |
-| 11 | Firmware from macOS | Wi-Fi, Bluetooth, and other blobs | — | Trackpad, Wi-Fi and Bluetooth firmware pinned by hash (pkgs/j614s-firmware.nix), converted on a Mac (tools/brcm-firmware) |
+| 11 | Firmware from macOS | Wi-Fi, Bluetooth, and other blobs | — | Trackpad, Wi-Fi and Bluetooth firmware pinned by hash (pkgs/j614s-firmware.nix), converted on a Mac (tools/mac-firmware) |
 | 12 | NixOS module for `J614s` | — | — | nixos/common.nix, disk.nix, ram.nix |
 | **Phase 3: a usable laptop** | | | | |
 | 13 | Keyboard and trackpad | `mtp` coprocessor, `dockchannel-mtp`, `hid-transport,mux` | TBA | Done: keyboard and multitouch trackpad (docs/boot_linux/keyboard.md); no Force Touch haptics yet |
@@ -37,7 +37,7 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 | 18 | USB-C data and charging | `usb-drd,t6040` ×3, `atc-phy,t6040` ×4, `usbc,sn201202x` on SPMI | TBA | Not started |
 | **Phase 4: networking** | | | | |
 | 19 | PCIe and DART for `apcie0` | `apcie,t6040`, `dart,t8110` | TBA | Done: m1n1 trains the link, Linux runs port 0 (patch 0028); the SError was Linux powering off the unused-looking apcie_sys_gp domain |
-| 20 | Wi-Fi | Broadcom `14e4:4388` behind `apcie0` | TBA | Done: BCM4388 C2, firmware from macOS (tools/brcm-firmware), scans and NetworkManager (patches 0029-0031) |
+| 20 | Wi-Fi | Broadcom `14e4:4388` behind `apcie0` | TBA | Done: BCM4388 C2, firmware from macOS (tools/mac-firmware), scans and NetworkManager (patches 0029-0031) |
 | 21 | Bluetooth | `BCM_4388C2`, `bluetooth,n88` behind `apcie0` | TBA | hci0 comes up (hci_bcm4377); pairing untested |
 | **Phase 5: the rest** | | | | |
 | 22 | Speakers | 6 × `sn012776` amps on `i2c1`/`i2c3`, `admac,t604x` | TBA | Not started |
