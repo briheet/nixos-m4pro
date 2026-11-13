@@ -16,12 +16,19 @@ Patches here, on top of kernel/patches (apply after them):
 Kernel config needed on top of m4pro-nixos.config: `CONFIG_RUST=y`,
 `CONFIG_APPLE_PMP=y` (rustc 1.99.1 and bindgen from the pinned nixpkgs work).
 
-Status (2026-11-13): PMP starts (CPU_CONTROL 0x10), does the RTKit hello,
-endpoint map, crashlog, ioreport and endpoint-7 buffers, then never
-acknowledges its IOP power state, so the driver's probe times out (-ETIME).
-Also tried, without change: boot() instead of wake(), starting endpoint 0x20
-before the ack, AP power ON before the ack (as proxyclient fw/pmp.py does),
-IOP power INIT after the hello. No DART errors, no crash report.
+Status (2026-11-13, after tracing macOS 27.2.1 under the m1n1 hypervisor,
+trace in build/macos/hv-pmp-trace-macos27.2.1.txt, tools/hv/trace_pmp.py):
 
-Next: trace how macOS boots PMP (m1n1 hypervisor with ASC tracing) to see
-the message order and what PMP waits for after the endpoint-7 buffer.
+- macOS starts PMP without an IOP power request; PMP asks for a buffer on
+  system endpoint 7 and takes the reply as message type 5. With those two
+  changes PMP boots under Linux (syslog "io.cpp:61: PMP started") and runs
+  the endpoint 0x20 protocol pmp.rs implements.
+- macOS reports ANS power to PMP (DEV_STATUS_TGT_WR bit 33). pmp-report has
+  the T6041 offsets (base 0x5003c0000, tgt_read 0x1e00, tgt_write 0x10f00,
+  actual 0x1e80, status 0x10) and a fix for entries >= 32 (64-bit shift);
+  ANS's power domain goes through pmp_report_ans.
+- Still open: ANS crashes (SError, FAR 0x41f020000) when it enters IOP
+  sleep after "NVMe shutdown ... saveCtx", even with PMP running and ANS
+  reported. The boot trace has no ANS sleep. Next: trace macOS putting ANS to
+  sleep (system sleep under the hypervisor, trace_nvme.py + trace_pmp.py).
+- PMP sends one message the driver does not know: type 0x36, payload 0x178.

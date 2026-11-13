@@ -1,0 +1,48 @@
+From c83b78bbdfffe6cfb02a1048baf2e9e7f4c23240 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 05:16:46 +0000
+Subject: [PATCH 4/8] soc: apple: rtkit: Answer endpoint 7 buffer requests with
+ type 5
+
+macOS answers the T6040 PMP endpoint 7 buffer request with message type 5,
+not the type 1 used for the other buffer endpoints; PMP ignores type 1.
+---
+ drivers/soc/apple/rtkit.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/soc/apple/rtkit.c b/drivers/soc/apple/rtkit.c
+index 5a809b5e7..0de8da945 100644
+--- a/drivers/soc/apple/rtkit.c
++++ b/drivers/soc/apple/rtkit.c
+@@ -23,7 +23,8 @@ enum {
+ 	APPLE_RTKIT_EP_IOREPORT = 4,
+ 	/*
+ 	 * Seen on the T6040 PMP: asks for a buffer at boot and does not finish
+-	 * booting (no IOP power ack) until it gets one. Its use is unknown.
++	 * booting (no IOP power ack) until it gets one, answered with message
++	 * type 5 (macOS 27.2.1 under the m1n1 hypervisor). Its use is unknown.
+ 	 */
+ 	APPLE_RTKIT_EP_SYS7 = 7,
+ 	APPLE_RTKIT_EP_OSLOG = 8,
+@@ -60,6 +61,7 @@ enum {
+ #define APPLE_RTKIT_CRASHLOG_CRASH 1
+ 
+ #define APPLE_RTKIT_BUFFER_REQUEST	1
++#define APPLE_RTKIT_SYS7_BUFFER_REPLY	5
+ #define APPLE_RTKIT_BUFFER_REQUEST_SIZE GENMASK_ULL(51, 44)
+ #define APPLE_RTKIT_BUFFER_REQUEST_IOVA GENMASK_ULL(43, 0)
+ 
+@@ -312,7 +314,13 @@ static int apple_rtkit_common_rx_get_buffer(struct apple_rtkit *rtk,
+ 			reply |= FIELD_PREP(APPLE_RTKIT_OSLOG_IOVA,
+ 					    buffer->iova >> 12);
+ 		} else {
++			/*
++			 * Endpoint 7 takes its buffer with message type 5, as
++			 * macOS answers the T6040 PMP; it ignores type 1.
++			 */
+ 			reply = FIELD_PREP(APPLE_RTKIT_SYSLOG_TYPE,
++					   ep == APPLE_RTKIT_EP_SYS7 ?
++					   APPLE_RTKIT_SYS7_BUFFER_REPLY :
+ 					   APPLE_RTKIT_BUFFER_REQUEST);
+ 			reply |= FIELD_PREP(APPLE_RTKIT_BUFFER_REQUEST_SIZE,
+ 					    buffer->size >> 12);

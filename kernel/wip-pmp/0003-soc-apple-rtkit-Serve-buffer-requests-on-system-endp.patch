@@ -1,7 +1,7 @@
 From 89f008d1a7ebf5f11cbc4a9588c52bad6d380c85 Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Fri, 13 Nov 2026 04:34:57 +0000
-Subject: [PATCH 3/3] soc: apple: rtkit: Serve buffer requests on system
+Subject: [PATCH 3/8] soc: apple: rtkit: Serve buffer requests on system
  endpoint 7
 
 The T6040 PMP starts endpoint 7, asks for a 2-page buffer there and does not
