@@ -29,7 +29,15 @@ let
     '';
   };
 in
-runCommand "j614s-firmware" { } ''
+# Fixed-output: the store path depends only on this hash, not on the nixpkgs
+# that builds it, so every configuration (this repo's, or a personal one on
+# another nixpkgs) finds the same path, and a machine that has it needs
+# neither source file.
+runCommand "j614s-firmware" {
+  outputHashMode = "recursive";
+  outputHashAlgo = "sha256";
+  outputHash = "sha256-E+y3HSffw9IO6+pir2Zol0sBbhOOhgDUy1SqCn3iCQ4=";
+} ''
   install -D -m 444 ${tpmtfw} $out/lib/firmware/apple/tpmtfw-j614s.bin
   tar -C $out -xf ${brcm}
 ''

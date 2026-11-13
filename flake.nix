@@ -96,6 +96,17 @@
         )
       );
 
+      # For a personal NixOS configuration on the J614s (another flake):
+      #   default   the hardware, the SSD layout and the m1n1/U-Boot boot
+      #             chain; needs allowUnfree (Apple firmware, pinned by hash)
+      #   desktop   Hyprland on the boot framebuffer (desktop.j614s.terminal)
+      #   hardware  the hardware alone, without the SSD layout
+      nixosModules = {
+        default = ./nixos/j614s-ssd.nix;
+        desktop = ./nixos/desktop.nix;
+        hardware = ./nixos/j614s.nix;
+      };
+
       # NixOS from RAM on the J614s, booted from the host through m1n1.
       #   nix build .#nixosConfigurations.m4pro-ram.config.system.build.netboot
       # It carries the installed system (m4pro) to put on the SSD.
