@@ -1,0 +1,41 @@
+From 95d3b6bc33bd9d756685b57c3ddab518134723bd Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 12:24:00 +0530
+Subject: [PATCH] proxyclient: Write large images in pieces in
+ compressed_writemem
+
+The compressed data is staged on m1n1's heap (128 MiB), so a guest image
+with a large initramfs (226 MB) failed with "Out of memory". Compress and
+write images larger than 64 MiB in 64 MiB pieces.
+---
+ proxyclient/m1n1/proxyutils.py | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/proxyclient/m1n1/proxyutils.py b/proxyclient/m1n1/proxyutils.py
+index 3dd58b5a..7dfd15ca 100644
+--- a/proxyclient/m1n1/proxyutils.py
++++ b/proxyclient/m1n1/proxyutils.py
+@@ -240,10 +240,20 @@ class ProxyUtils(Reloadable):
+ 
+     inst = exec
+ 
++    # Largest piece compressed and staged on m1n1's heap at a time; images
++    # bigger than the heap (e.g. a kernel with a large initramfs) go in pieces.
++    COMPRESSED_WRITEMEM_CHUNK = 64 << 20
++
+     def compressed_writemem(self, dest, data, progress=None):
+         if not len(data):
+             return
+ 
++        chunk = self.COMPRESSED_WRITEMEM_CHUNK
++        if len(data) > chunk:
++            for off in range(0, len(data), chunk):
++                self.compressed_writemem(dest + off, data[off:off + chunk], progress)
++            return
++
+         payload = gzip.compress(data, compresslevel=1)
+         compressed_size = len(payload)
+ 
+-- 
+2.56.0
+

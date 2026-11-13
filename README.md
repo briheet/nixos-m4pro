@@ -44,7 +44,7 @@ Run everything below with `just`, from `nix develop` or `nix shell nixpkgs#just`
 3. **Boot the installer** (the M4 Pro powered on into m1n1 on `macostest`):
    ```
    just connect
-   just boot-ram    # about 8 minutes: 207 MB over debug USB
+   just dev-boot ram   # about 40 s
    ```
 4. **Install.** Each step asks for confirmation on the host and refuses on the target if it finds anything it did not expect (an existing NixOS partition or filesystem, a non-macOS layout, too little free space):
    ```
@@ -54,13 +54,13 @@ Run everything below with `just`, from `nix develop` or `nix shell nixpkgs#just`
 5. **Boot it:**
    ```
    just restart
-   just boot-disk   # about 70 s
+   just dev-boot disk  # about 20 s
    just sh "systemctl is-system-running"
    ```
 
 ## Updating
 
-Change the flake, then `just build`, `just boot-ram`, `just flash-system` (adds a generation), `just restart`, `just boot-disk`. Once the Mac has a network this becomes an ordinary `nixos-rebuild`.
+Change the flake, then `just build`, `just restart`, `just dev-boot ram`, `just flash-system` (adds a generation), `just restart`, `just dev-boot disk`. Once the Mac has a network this becomes an ordinary `nixos-rebuild`.
 
 ## m1n1 on the target
 
@@ -80,8 +80,9 @@ sh <(curl <address>:8000)  # in recoveryOS, with the address it prints
 | `builder`, `setup` | host setup |
 | `build` | `.#boot-files` into `build/out` |
 | `m1n1 [release\|dev]` | m1n1 into `build/out` |
-| `connect`, `restart` | debug USB, restart into m1n1 |
-| `boot-ram`, `boot-disk` | boot the installer or the installed system |
+| `restart` | restart into m1n1 and wait for its USB device |
+| `dev-boot [ram\|disk]` | boot the installer or the SSD's system: m1n1's stock `linux.py` over m1n1's USB device (about 9.5 MB/s), then the console over debug USB |
+| `connect`, `boot-ram`, `boot-disk` | fallback: everything over debug USB (about 0.5 MB/s) |
 | `sh "cmd" [timeout]` | run a command on the target's root shell, with its exit status |
 | `flash-partition`, `flash-format`, `flash-system`, `flash` | install to the SSD |
 | `m1n1-serve [dev\|release]` | install m1n1 from recoveryOS |

@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Relay a serial console to files, for tools/m4sh.
+
+  tools/m4console [--pad64] PORT
+
+--pad64 pads every input write to a multiple of 64 bytes (spaces before the
+final newline), which the dockchannel UART over debug USB needs: it drops
+input that does not fill its 64-byte blocks.
+
+Everything read from the port goes to build/console.log (truncated at start,
+what m4sh reads) and to the run record under build/runs/<time>/ (console.log
+and console.ts.log with host timestamps); bytes written to the FIFO
+build/console.in go to the port. Runs until the port goes away.
+
+With `just dev-boot` the port is the dockchannel UART over debug USB
+(/dev/cu.kis-100000-ch-0, the kernel's ttyDC0), after m1n1's stock linux.py
+has booted the kernel over m1n1's own USB device.
+"""
+import datetime
+import os
+import pathlib
+import select
+import stat
+import sys
+
+REPO = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "upstream/m1n1/proxyclient"))
+import serial  # noqa: E402  (pyserial, from .venv-m1n1)
+
+LOG = REPO / "build/console.log"
+INPUT = REPO / "build/console.in"
+RUN = REPO / "build/runs" / datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def stamp():
+    return datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+
+def pad64(data):
+    pad = -len(data) % 64
+    if not pad:
+        return data
+    if data.endswith(b"\n"):
+        return data[:-1] + b" " * pad + b"\n"
+    return data + b" " * pad
+
+
+def main():
+    args = sys.argv[1:]
+    pad = "--pad64" in args
+    args = [a for a in args if a != "--pad64"]
+    port = serial.Serial(args[0], 115200, timeout=0)
+    RUN.mkdir(parents=True, exist_ok=True)
+    current = REPO / "build/current"
+    if current.is_symlink() or current.exists():
+        current.unlink()
+    current.symlink_to(RUN.relative_to(REPO / "build"))
+    (RUN / "argv.txt").write_text(" ".join(sys.argv) + "\n")
+    if INPUT.exists() and not stat.S_ISFIFO(INPUT.stat().st_mode):
+        INPUT.unlink()
+    if not INPUT.exists():
+        os.mkfifo(INPUT)
+    # O_RDWR keeps the FIFO open with no writer, so reads never see EOF.
+    fifo = os.open(INPUT, os.O_RDWR | os.O_NONBLOCK)
+    print(f"m4console: {args[0]} -> {LOG}, input {INPUT}, run {RUN}", flush=True)
+    pending = b""
+    with open(LOG, "wb", buffering=0) as log, \
+         open(RUN / "console.log", "wb", buffering=0) as raw, \
+         open(RUN / "console.ts.log", "wb", buffering=0) as ts:
+        try:
+            while True:
+                ready, _, _ = select.select([port.fileno(), fifo], [], [], 1.0)
+                if port.fileno() in ready:
+                    data = port.read(4096)
+                    log.write(data)
+                    raw.write(data)
+                    pending += data
+                    *lines, pending = pending.split(b"\n")
+                    for line in lines:
+                        ts.write(f"{stamp()} ".encode() + line.rstrip(b"\r") + b"\n")
+                if fifo in ready:
+                    data = os.read(fifo, 4096)
+                    if pad:
+                        data = pad64(data)
+                        for off in range(0, len(data), 64):
+                            port.write(data[off:off + 64])
+                    else:
+                        port.write(data)
+        except (OSError, serial.SerialException) as e:
+            (RUN / "result.txt").write_text(f"port went away at {stamp()}: {e}\n")
+            print(f"m4console: port went away at {stamp()}: {e}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

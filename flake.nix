@@ -73,7 +73,7 @@
             m1n1-stage1-dev = stage1 self.packages.aarch64-linux.m1n1-dev;
 
             # Everything the host sends m1n1 to boot the J614s
-            # (tools/tether-boot.py, `just boot-ram` and `just boot-disk`):
+            # (`just dev-boot` with m1n1's linux.py, or tools/tether-boot.py):
             # the kernel and device tree, and for each system its initrd and
             # command line (init= plus the system's own kernel-params, as its
             # extlinux entry has them).
@@ -87,6 +87,7 @@
               echo "init=${disk.toplevel}/init $(cat ${disk.toplevel}/kernel-params)" > $out/disk-cmdline
               echo ${disk.toplevel} > $out/disk-toplevel
             '';
+
           }
         )
       );

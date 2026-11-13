@@ -52,7 +52,8 @@ num_m1n1_patches := `ls m1n1/patches/*.patch | wc -l | tr -d ' '`
 build: builder
     docker exec -w /work {{builder}} sh -c '\
       out=$(nix build --no-link --print-out-paths .#boot-files) && \
-      mkdir -p build/out && cp -fL $out/* build/out/ && chmod 644 build/out/*'
+      mkdir -p build/out && cp -fL $out/* build/out/ && \
+      chmod 644 build/out/*'
     ls -l build/out
 
 # Build m1n1 into build/out: `stage1` (release + chainload to the ESP) or `dev` (the bring-up proxy build).
@@ -64,6 +65,51 @@ m1n1 variant="stage1": builder
     shasum -a 256 build/out/m1n1-{{variant}}.bin
 
 # --- the target ------------------------------------------------------------
+#
+# Development runs over m1n1's own USB device, as Asahi develops: m1n1's
+# proxy on its first serial port, the hypervisor's virtual UART (the guest
+# kernel's console) on its third. Debug USB (macvdmtool debugusb, the
+# dockchannel) is the fallback for when m1n1's USB device is not there.
+
+m1n1_usb := "/dev/cu.usbmodem*1"
+m1n1_vuart := "/dev/cu.usbmodem*3"
+
+# Restart the M4 Pro into m1n1 and wait for m1n1's USB device.
+restart:
+    pkill -f 'tools/tether-boot.py|tools/m4console|run_guest.py' || true
+    sudo -n {{vdm}} reboot | tail -n 1
+    for i in $(seq 60); do ls {{m1n1_usb}} >/dev/null 2>&1 && break; sleep 1; done
+    ls {{m1n1_usb}} {{m1n1_vuart}}
+    for i in 1 2 3 4 5; do \
+      M1N1DEVICE=$(ls {{m1n1_usb}}) perl -e 'alarm 20; exec @ARGV' .venv-m1n1/bin/python -c \
+        "import sys; sys.path.insert(0, 'upstream/m1n1/proxyclient'); from m1n1.setup import *" >/dev/null 2>&1 \
+        && echo "m1n1 answers" && exit 0; sleep 2; done; echo "m1n1 is not answering" >&2; exit 1
+
+# Boot `ram` (the installer) or `disk` (the SSD's system) on bare metal: m1n1's stock linux.py uploads over m1n1's USB device, then the console is relayed from the dockchannel over debug USB.
+dev-boot system="disk":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for f in Image.gz t6040-j614s.dtb {{system}}-initrd {{system}}-cmdline; do
+      test -f build/out/$f || { echo "build/out/$f missing; run just build" >&2; exit 1; }
+    done
+    pkill -f 'tools/m4console|tools/linux.py' || true
+    M1N1DEVICE=$(ls {{m1n1_usb}}) PYTHONUNBUFFERED=1 nohup .venv-m1n1/bin/python \
+      upstream/m1n1/proxyclient/tools/linux.py build/out/Image.gz build/out/t6040-j614s.dtb \
+      build/out/{{system}}-initrd -b "$(cat build/out/{{system}}-cmdline)" < /dev/null > build/linux-py.out 2>&1 &
+    # Linux has started once m1n1's USB device goes away.
+    for i in $(seq 120); do ls {{m1n1_usb}} >/dev/null 2>&1 || break; sleep 1; done
+    ls {{m1n1_usb}} >/dev/null 2>&1 && { echo "m1n1 did not hand over:" >&2; tail -n 5 build/linux-py.out >&2; exit 1; }
+    pkill -f tools/linux.py || true
+    echo "kernel started after $i s; switching to debug USB for the console"
+    just connect
+    nohup .venv-m1n1/bin/python tools/m4console --pad64 {{port}} > build/m4console.out 2>&1 &
+    for i in $(seq 90); do
+      tools/m4sh "uname -r" 3 >/dev/null 2>&1 && { echo "{{system}}: shell answers"; tools/m4sh "uname -r; systemctl is-system-running" 10; exit 0; }
+      sleep 2
+    done
+    echo "no shell on the console" >&2; exit 1
+
+# --- fallback: bare metal over debug USB ------------------------------------
 
 # Switch the M4 Pro's USB-C port to debug USB (after every target reboot).
 connect:
@@ -71,23 +117,12 @@ connect:
     for i in 1 2 3; do sudo -n {{vdm}} debugusb | tail -n 1 && break; sleep 3; done
     for i in $(seq 15); do [ -e {{port}} ] && break; sleep 1; done; test -e {{port}}
 
-# Restart the M4 Pro into m1n1 and reconnect.
-restart:
-    pkill -f tools/tether-boot.py || true
-    sudo -n {{vdm}} reboot | tail -n 1
-    for i in $(seq 60); do \
-      ioreg -p IOUSB -l -w0 | grep -q '"idProduct" = 12653' && break; sleep 1; done
-    just connect
-    for i in 1 2 3 4 5; do \
-      perl -e 'alarm 12; exec @ARGV' dune exec -- nixos-m4pro probe 2>&1 | grep -q "chip id 0x6040" && exit 0; \
-      sleep 2; done; echo "m1n1 is not answering" >&2; exit 1
-
-# Boot the RAM installer from build/out (about 8 minutes over debug USB).
-boot-ram:
+# Boot the RAM installer on bare metal over debug USB (about 8 minutes).
+boot-ram: connect
     tools/m4boot ram
 
-# Boot the NixOS installed on the SSD, with the kernel from build/out.
-boot-disk:
+# Boot the SSD's NixOS on bare metal over debug USB, with the kernel from build/out.
+boot-disk: connect
     tools/m4boot disk
 
 # Run a command on the target's root shell.
