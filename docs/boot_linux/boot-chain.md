@@ -39,6 +39,15 @@ Tested without recovery trips with `tools/m1n1-try`, which runs an m1n1 image th
 - **Linux's NVMe fails after any ANS sleep.** m1n1 puts ANS to sleep and resets it after reading the ESP; Linux then cold-boots it and ANS crashes with an SError (FAR 0x41f008000 in ANS's address space, not in the ADT). The same happens with Linux alone: unbinding and rebinding `nvme-apple` makes ANS crash while entering IOP sleep (`NVMe shutdown start ... saveCtx`, AP quiesce acked, then SError at 0x41f020000). Direct boots only work because iBoot leaves ANS running and Linux wakes it instead of cold-booting it. Ruled out: the PMGR reset sequence, `apcie_sys_st0` state, NVMe controller shutdown, and the NVMe/NVMMU/IOQ registers m1n1 leaves set.
 - Solved: see pmp.md. PMP is started by Linux, ANS power is reported to it, and both Linux and m1n1 stop M4-class ANS by quiescing it with its CPU running; m1n1 stage 1 then hands over to Linux with the SSD working.
 
+## Stage 1 on T6040 (2026-11-13)
+
+Recorded from iBoot's own serial output, which debug USB carries when the port is switched during boot (`build/catch-boot.sh` style capture), and tested from the host with `tools/stage1-test.py` (calls the installed m1n1's chainload in iBoot's memory layout) and `tools/m1n1-try`:
+
+- **iBoot panics on a boot object of 0x4f0000 bytes or more** (mBoot-20457.41.3); 0x4d0000 boots. m1n1's raw image carries .bss, and the hypervisor's nested-virtualization pages (1 MiB, upstream 84b81988) pushed a chainloading build past that. m1n1 patch 0007 allocates them on the heap: stage 1 is 0x3f0088.
+- **iBoot places RTBuddySeg, SEPFW, SEPPatches, uStuff, preoslog and BootArgs directly after the boot object**, where stage 1 copies stage 2. m1n1's built-in chainload moved only SEPFW (upstream fixed chainload.py in 00b78fa6, not chainload.c); m1n1 patch 0008 moves them all.
+- Stage 1 hands ANS over quiesced (patch 0005), as M4 needs.
+- Not the cause, though tried: nixpkgs' logo payload (dropped anyway), the Nix toolchain, the raw vs Mach-O format (iBoot enters a Mach-O without `__TEXT_BOOT_EXEC` like a raw object; aurora-silicon's padding is for Linux's execute window).
+
 ## Choosing an OS
 
 - **macOS or NixOS:** the Apple startup picker (hold the power button at boot) lists every volume with a boot object, so both appear. Startup Disk in macOS, or in the picker, sets the default.
