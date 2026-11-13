@@ -70,7 +70,8 @@ Each item has a check that marks it done. Items are ticked only after the check 
 - [ ] **18. Install to disk.** Free space next to the macOS container, an EFI partition and a NixOS root, booted by m1n1 from `macostest` without the host.
   Done so far: macOS container shrunk to 370 GB by the owner in macOS; p4 `nixos-boot` (512 MiB FAT32) and p5 `nixos` (115 GiB ext4) created in the free space from Linux (GPT backup in build/gpt-before.bin); `nixos-install --system` from the RAM image (`nixosConfigurations.m4pro`, nixos/disk.nix). NixOS boots from the SSD with only the kernel and initrd sent by the host (72 s to login), reaches `running`, and files persist across reboots.
   `systemctl reboot` restarts the machine back to m1n1 in 11 s (the watchdog restart handler).
-  Left: m1n1 booting it without the host.
+  Reproducible with `just flash` (README.md).
+  Left: m1n1 booting it without the host, see boot-chain.md.
 
 ## Needed from the owner along the way
 

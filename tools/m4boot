@@ -1,0 +1,47 @@
+#!/bin/sh
+# Boot a NixOS system on the M4 Pro from the files `just build` put in
+# build/out, and return once root is logged in on the debug console.
+#
+#   tools/m4boot ram    the RAM image (installer), 207 MB upload, ~8 min
+#   tools/m4boot disk   the system installed on the SSD, ~70 s
+#
+# The target must be in m1n1 (it is after power-on, or `just restart`).
+# tools/tether-boot.py keeps running in the background as the console
+# relay; tools/m4sh talks to the shell through it.
+set -eu
+cd "$(dirname "$0")/.." || exit 1
+DEV=/dev/cu.kis-100000-ch-0
+OUT=build/out
+
+case "${1:-}" in
+  ram | disk) sys=$1 ;;
+  *) echo "usage: tools/m4boot ram|disk" >&2; exit 2 ;;
+esac
+for f in Image.gz t6040-j614s.dtb "$sys-initrd" "$sys-cmdline"; do
+  [ -f "$OUT/$f" ] || { echo "m4boot: $OUT/$f missing; run just build" >&2; exit 1; }
+done
+[ -e "$DEV" ] || { echo "m4boot: no $DEV; run just connect" >&2; exit 1; }
+if pgrep -f tools/tether-boot.py >/dev/null; then
+  echo "m4boot: a tether-boot relay is already running; run just restart first" >&2
+  exit 1
+fi
+perl -e 'alarm 12; exec @ARGV' dune exec -- nixos-m4pro probe 2>&1 | grep -q "chip id 0x6040" ||
+  { echo "m4boot: m1n1 is not answering on $DEV; run just restart" >&2; exit 1; }
+
+: > build/console.log
+M1N1DEVICE=$DEV PYTHONUNBUFFERED=1 nohup .venv-m1n1/bin/python tools/tether-boot.py \
+  "$OUT/Image.gz" "$OUT/t6040-j614s.dtb" "$OUT/$sys-initrd" -b "$(cat "$OUT/$sys-cmdline")" \
+  > build/tether.out 2>&1 &
+pid=$!
+echo "m4boot: booting $sys (relay pid $pid, run $(readlink build/current 2>/dev/null || echo new))"
+
+start=$(date +%s)
+until grep -aq "login: root (automatic login)" build/console.log; do
+  kill -0 $pid 2>/dev/null || { echo "m4boot: tether-boot exited:" >&2; tail -n 5 build/tether.out >&2; exit 1; }
+  if grep -aq "Kernel panic" build/console.log; then
+    echo "m4boot: kernel panic, see build/current/console.log" >&2; exit 1
+  fi
+  [ $(($(date +%s) - start)) -lt 900 ] || { echo "m4boot: no login after 900 s" >&2; exit 1; }
+  perl -e 'select(undef,undef,undef,2)'
+done
+echo "m4boot: $sys logged in after $(($(date +%s) - start)) s"

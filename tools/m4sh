@@ -1,26 +1,46 @@
 #!/bin/sh
-# Run one command on the M4 Pro's shell through tools/tether-boot.py's relay
-# and print its output. The command and its output are appended to the
-# current run's commands.log (build/current/commands.log).
-#   tools/m4sh "uname -a" [seconds to wait, default 3]
+# Run one command on the M4 Pro's shell through tools/tether-boot.py's relay,
+# print its output and exit with its exit status. The command and its output
+# are appended to the current run's commands.log (build/current/commands.log).
+#   tools/m4sh "uname -a" [timeout in seconds, default 10]
 #   tools/m4sh --monitor [seconds]   start an uptime line on the console
+#
+# The command runs in a subshell, ( cmd ), between start and end markers;
+# the end marker carries its exit status. A subshell also accepts commands
+# that end in &. m4sh returns as soon as the end marker arrives, and fails
+# with status 124 if it does not arrive within the timeout.
 cd "$(dirname "$0")/.." || exit 1
 if [ "$1" = "--monitor" ]; then
-  set -- "( (while true; do echo \"MON up=\$(cut -d' ' -f1 /proc/uptime)\"; sleep ${2:-15}; done) > /dev/console 2>&1 & )" 2
+  set -- "( (while true; do echo \"MON up=\$(cut -d' ' -f1 /proc/uptime)\"; sleep ${2:-15}; done) > /dev/console 2>&1 & )" 5
 fi
+[ -p build/console.in ] || { echo "m4sh: no relay (build/console.in); boot with tools/tether-boot.py first" >&2; exit 2; }
 n=$(date +%s)$$
+limit=${2:-10}
 before=$(wc -c < build/console.log)
-printf 'echo @@B%s; %s; echo @@E%s\n' "$n" "$1" "$n" > build/console.in
-perl -e "select(undef,undef,undef,${2:-3})"
+printf 'echo @@B%s; ( %s ); echo @@E%s:$?\n' "$n" "$1" "$n" > build/console.in
+
 # Strip terminal escape sequences first: bash on NixOS wraps its prompt in
-# title escapes, which would otherwise hide the start marker.
-out=$(tail -c +$((before + 1)) build/console.log | tr -d '\r' |
-  perl -pe 's/\e\][^\a]*(\a|\e\\)//g; s/\e\[[0-9;?]*[ -\/]*[@-~]//g' |
-  awk -v b="@@B$n" -v e="@@E$n" '$0 == b { on = 1; next } $0 == e { on = 0 } on')
+# title escapes, which would otherwise hide the markers.
+output() {
+  tail -c +$((before + 1)) build/console.log | tr -d '\r' |
+    perl -pe 's/\e\][^\a]*(\a|\e\\)//g; s/\e\[[0-9;?]*[ -\/]*[@-~]//g'
+}
+
+start=$(date +%s)
+rc=124
+while :; do
+  end=$(output | grep -a "^@@E$n:[0-9]*\$" | head -n 1)
+  if [ -n "$end" ]; then rc=${end#*:}; break; fi
+  [ $(($(date +%s) - start)) -lt "$limit" ] || break
+  perl -e 'select(undef,undef,undef,0.2)'
+done
+out=$(output | awk -v b="@@B$n" -v e="@@E$n:" '$0 == b { on = 1; next } index($0, e) == 1 { on = 0 } on')
 printf '%s\n' "$out"
+[ "$rc" = 124 ] && echo "m4sh: no end marker after ${limit} s" >&2
 if [ -d build/current ]; then
   {
-    printf '%s $ %s\n' "$(date +%H:%M:%S)" "$1"
+    printf '%s $ %s  [rc=%s]\n' "$(date +%H:%M:%S)" "$1" "$rc"
     printf '%s\n\n' "$out"
   } >> build/current/commands.log
 fi
+exit "$rc"

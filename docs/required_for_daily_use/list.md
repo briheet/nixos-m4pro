@@ -6,7 +6,7 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 
 ## What is already in hand
 
-- m1n1 (`cf37927d`, development build) is the custom boot object on the `macostest` volume. `Macintosh HD` is untouched and stays at Full Security.
+- m1n1 (`cf37927d` plus m1n1/patches, development build) is the custom boot object on the `macostest` volume. `Macintosh HD` is untouched and stays at Full Security.
 - The host (an M5 Max) reaches m1n1's proxy over debug USB at `/dev/cu.kis-100000-ch-0` after `macvdmtool debugusb`. Serial mode is refused.
 - Read, write, power, and interrupt-routing steps for the UART, watchdog, PMGR, and AIC run on the live board through `nixos-m4pro`.
 
@@ -15,21 +15,21 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 | # | Item | Hardware on this Mac | Asahi | Here |
 |---|---|---|---|---|
 | **Phase 1: a shell from RAM** | | | | |
-| 1 | Linux build environment | aarch64-linux builder on the host | — | Not started |
-| 2 | Kernel boots to a serial shell, tethered from the host | m1n1 proxy, `uart0` | Device tree WIP | Not started |
-| 3 | Device tree for this bin | 4E + 8P cores, 24 GB, `J614s` | WIP, lists 4E + 12P | Not started |
-| 4 | Interrupts, timers, secondary CPUs | `aic,3`, ARM timer, 3 clusters | AIC v3 WIP | AIC readable and routed |
-| 5 | Power domains, watchdog, pinctrl, I2C, SPMI | `pmgr1,t6041`, `wdt,t8101`, `gpio,t8101`, `i2c,t8101`, `aapl,spmi` | TBA | PMGR and WDT run live |
-| 6 | Boot framebuffer on the internal panel | `disp0,t604x`, iBoot framebuffer | — | Not started |
-| 7 | NixOS from RAM | — | — | Not started |
+| 1 | Linux build environment | aarch64-linux builder on the host | — | Done: `just builder`, Nix in an aarch64-linux container |
+| 2 | Kernel boots to a serial shell, tethered from the host | m1n1 proxy, `uart0` | Device tree WIP | Done: console on `ttyDC0` (dockchannel) |
+| 3 | Device tree for this bin | 4E + 8P cores, 24 GB, `J614s` | WIP, lists 4E + 12P | Done: `t6040-j614s.dts`, 12 cores, 24 GB |
+| 4 | Interrupts, timers, secondary CPUs | `aic,3`, ARM timer, 3 clusters | AIC v3 WIP | Done: AIC, timer, all 12 cores (both CTRR ranges reserved in m1n1) |
+| 5 | Power domains, watchdog, pinctrl, I2C, SPMI | `pmgr1,t6041`, `wdt,t8101`, `gpio,t8101`, `i2c,t8101`, `aapl,spmi` | TBA | Done: PMGR from the ADT, watchdog reboot |
+| 6 | Boot framebuffer on the internal panel | `disp0,t604x`, iBoot framebuffer | — | Done: simpledrm console on the panel |
+| 7 | NixOS from RAM | — | — | Done: `just boot-ram` |
 | **Phase 2: install to the SSD** | | | | |
-| 8 | NVMe | `ans` (`iop,ascwrap-v6`, with an `ans-pcie` child), `sart,coastguard` | WIP | SART and ANS modelled on the loopback |
-| 9 | Disk layout | 500 GB `APPLE SSD AP0512Z`, APFS only | — | Not started |
-| 10 | Boot chain from disk | m1n1 stage 1 → stage 2 → U-Boot → systemd-boot | Installer: no | Stage 1 only |
+| 8 | NVMe | `ans` (`iop,ascwrap-v6`, with an `ans-pcie` child), `sart,coastguard` | WIP | Done: ANS through ADT reg 9, mainline M4 driver change |
+| 9 | Disk layout | 500 GB `APPLE SSD AP0512Z`, APFS only | — | Done: p4 `nixos-boot`, p5 `nixos` after a macOS resize; `just flash` |
+| 10 | Boot chain from disk | m1n1 stage 1 → stage 2 → U-Boot → systemd-boot | Installer: no | Kernel still sent by the host; see docs/boot_linux/boot-chain.md |
 | 11 | Firmware from macOS | Wi-Fi, Bluetooth, and other blobs | — | Not started |
-| 12 | NixOS module for `J614s` | — | — | Not started |
+| 12 | NixOS module for `J614s` | — | — | nixos/common.nix, disk.nix, ram.nix |
 | **Phase 3: a usable laptop** | | | | |
-| 13 | Keyboard and trackpad | `mtp` coprocessor, `dockchannel-mtp`, `hid-transport,mux` | TBA | Not started |
+| 13 | Keyboard and trackpad | `mtp` coprocessor, `dockchannel-mtp`, `hid-transport,mux` | TBA | Keyboard works; trackpad needs the SMC reset GPIO |
 | 14 | Internal display | `dcp`, `disp0,t604x`, Parade `DP855` TCON on `spi4` | TBA | Not started |
 | 15 | Battery, charger, power button, lid | `smc` coprocessor, `smc-gpio0` | TBA | Not started |
 | 16 | Keyboard backlight | `fpwm0` | TBA | Not started |

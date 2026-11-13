@@ -7,7 +7,8 @@
 #
 # It is also the installer: the target has no network, so the closure of
 # the installed system (disk.nix, passed in as diskSystem) is in this
-# image's store, and `nixos-install --system` copies it to the SSD.
+# image's store, and m4pro-install (pkgs/m4pro-install.nix) partitions,
+# formats and installs it.
 { config, lib, pkgs, modulesPath, diskSystem, ... }:
 
 {
@@ -19,11 +20,12 @@
   # The kernel's squashfs has zlib and xz, not zstd.
   netboot.squashfsCompression = "xz -Xdict-size 100%";
 
+  # m4pro-install refers to diskSystem, so its whole closure is in this
+  # image's store.
   environment.systemPackages = [
-    config.system.build.nixos-install
-    pkgs.gptfdisk
-    pkgs.e2fsprogs
-    pkgs.dosfstools
+    (pkgs.callPackage ../pkgs/m4pro-install.nix {
+      inherit diskSystem;
+      inherit (config.system.build) nixos-install;
+    })
   ];
-  system.extraDependencies = [ diskSystem ];
 }

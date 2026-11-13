@@ -37,6 +37,33 @@
             doCheck = true;
           };
         }
+        // pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "aarch64-linux") (
+          let
+            ram = self.nixosConfigurations.m4pro-ram.config.system.build;
+            disk = self.nixosConfigurations.m4pro.config.system.build;
+            kernel = self.nixosConfigurations.m4pro.config.boot.kernelPackages.kernel;
+          in
+          {
+            m1n1 = pkgs.callPackage ./pkgs/m1n1.nix { };
+            m1n1-dev = pkgs.callPackage ./pkgs/m1n1.nix { release = false; };
+
+            # Everything the host sends m1n1 to boot the J614s
+            # (tools/tether-boot.py, `just boot-ram` and `just boot-disk`):
+            # the kernel and device tree, and for each system its initrd and
+            # command line (init= plus the system's own kernel-params, as its
+            # extlinux entry has them).
+            boot-files = pkgs.runCommand "m4pro-boot-files" { } ''
+              mkdir -p $out
+              gzip -9n < ${kernel}/Image > $out/Image.gz
+              cp ${kernel}/dtbs/apple/t6040-j614s.dtb $out/
+              cp ${ram.netbootRamdisk}/initrd $out/ram-initrd
+              echo "init=${ram.toplevel}/init $(cat ${ram.toplevel}/kernel-params)" > $out/ram-cmdline
+              cp ${disk.initialRamdisk}/initrd $out/disk-initrd
+              echo "init=${disk.toplevel}/init $(cat ${disk.toplevel}/kernel-params)" > $out/disk-cmdline
+              echo ${disk.toplevel} > $out/disk-toplevel
+            '';
+          }
+        )
       );
 
       # NixOS from RAM on the J614s, booted from the host through m1n1.
@@ -62,6 +89,7 @@
             ocamlPackages.ocaml-lsp
             ocamlPackages.utop
             ocamlPackages.odoc
+            just
           ];
         };
       });
