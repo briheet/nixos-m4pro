@@ -77,7 +77,14 @@ Run everything below with `just`, from `nix develop` or `nix shell nixpkgs#just`
 
 ## Updating
 
-Change the flake, then:
+Once the Mac is on Wi-Fi, it builds and switches itself:
+
+```
+git push            # the Mac fetches the branch from GitHub
+just update         # native build on the Mac, live switch, new boot entry
+```
+
+It runs as a systemd unit on the Mac (`journalctl -u m4update`), so a dropped console does not stop it. The Mac's builds are bit-identical to the builder's. Without a network, the installer route still works:
 
 ```
 just build
@@ -86,8 +93,6 @@ just dev-boot ram
 just flash-system   # adds a generation and writes the U-Boot stage 2 back
 tools/m4reboot
 ```
-
-`sshd` is on (keys only), so once the Mac is on Wi-Fi and your key is in `~briheet/.ssh/authorized_keys`, updates can go over the network with `nixos-rebuild --target-host` instead.
 
 ## Testing without installing
 
@@ -108,6 +113,7 @@ tools/m4reboot
 | `sh "cmd" [timeout]` | run a command on the target's root shell, with its exit status |
 | `flash-partition`, `flash-format`, `flash-system`, `flash` | install to the SSD |
 | `set-password user` | set a user's password from the host, sending only its hash |
+| `update [branch]` | on the Mac: fetch the pushed branch, build natively, switch live |
 | `m1n1-serve [stage1\|dev]` | install m1n1 from recoveryOS |
 | `stage2-proxy` | from the U-Boot boot chain back to the USB proxy (debug m1n1 as stage 2) |
 | `stage2-serve` | serve the debug m1n1 to copy onto the ESP from recoveryOS, if stage 2 fails |
