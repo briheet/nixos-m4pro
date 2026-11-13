@@ -20,10 +20,6 @@ local terminal = "foot"
 local menu     = "fuzzel"
 local browser  = "firefox"
 
-hl.on("hyprland.start", function ()
-    hl.exec_cmd("waybar")
-end)
-
 hl.env("XCURSOR_SIZE", "24")
 hl.env("HYPRCURSOR_SIZE", "24")
 hl.env("MOZ_ENABLE_WAYLAND", "1")

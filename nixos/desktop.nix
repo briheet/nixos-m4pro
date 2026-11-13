@@ -60,7 +60,6 @@ in
   environment.systemPackages = with pkgs; [
     foot
     fuzzel
-    waybar
     firefox
     brightnessctl
     pavucontrol
