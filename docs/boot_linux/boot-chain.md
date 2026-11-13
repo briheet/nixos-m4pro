@@ -43,7 +43,7 @@ Tested without recovery trips with `tools/m1n1-try`, which runs an m1n1 image th
 
 Recorded from iBoot's own serial output, which debug USB carries when the port is switched during boot (`build/catch-boot.sh` style capture), and tested from the host with `tools/stage1-test.py` (calls the installed m1n1's chainload in iBoot's memory layout) and `tools/m1n1-try`:
 
-- **iBoot panics on a boot object of 0x4f0000 bytes or more** (mBoot-20457.41.3); 0x4d0000 boots. m1n1's raw image carries .bss, and the hypervisor's nested-virtualization pages (1 MiB, upstream 84b81988) pushed a chainloading build past that. m1n1 patch 0007 allocates them on the heap: stage 1 is 0x3f0088.
+- **iBoot panics (3bdace14b1a9a68:2081) on a boot object that is not a whole number of 16 KiB pages** (mBoot-20457.41.3). m1n1 alone is; the appended `chainload=` lines are not, so every stage 1 failed while the plain m1n1 (0x4d0000, 0x3f0000) booted. The later attempts show :1065, iBoot's failed-boot path. Stage 1 is zero-padded after its terminator to 0x3f4000. (m1n1 patch 0007, the hypervisor's 1 MiB of VNCR pages moved out of .bss, came from a wrong size-limit theory but stays: it keeps the image 1 MiB smaller.)
 - **iBoot places RTBuddySeg, SEPFW, SEPPatches, uStuff, preoslog and BootArgs directly after the boot object**, where stage 1 copies stage 2. m1n1's built-in chainload moved only SEPFW (upstream fixed chainload.py in 00b78fa6, not chainload.c); m1n1 patch 0008 moves them all.
 - Stage 1 hands ANS over quiesced (patch 0005), as M4 needs.
 - Not the cause, though tried: nixpkgs' logo payload (dropped anyway), the Nix toolchain, the raw vs Mach-O format (iBoot enters a Mach-O without `__TEXT_BOOT_EXEC` like a raw object; aurora-silicon's padding is for Linux's execute window).

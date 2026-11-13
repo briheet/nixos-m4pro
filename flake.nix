@@ -20,9 +20,7 @@
 
       # m1n1 with the stage 1 config lines appended, as the Asahi installer
       # writes them (asahi-installer src/m1n1.py): chainload stage 2 from the
-      # ESP. The four NUL bytes end m1n1's payload list; without them m1n1
-      # scans whatever memory follows the image when iBoot loads it, and on
-      # J614s it stopped before drawing its logo.
+      # ESP. The four NUL bytes end m1n1's payload list.
       stage1 =
         m1n1:
         nixpkgs.legacyPackages.aarch64-linux.runCommand "m1n1-stage1.bin" { } ''
@@ -30,6 +28,11 @@
           printf 'chainload=%s;m1n1/boot.bin\nchosen.asahi,efi-system-partition=%s\n' \
             ${espPartuuid} ${espPartuuid} >> $out
           printf '\0\0\0\0' >> $out
+          # iBoot on T6040 panics (3bdace14b1a9a68:2081) on a boot object that
+          # is not a whole number of 16 KiB pages; m1n1 alone is, the config
+          # lines are not. Zero-pad; m1n1 stops at the terminator above.
+          size=$(stat -c %s $out)
+          truncate -s $(( (size + 16383) / 16384 * 16384 )) $out
         '';
     in
     {
