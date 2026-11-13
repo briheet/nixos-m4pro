@@ -30,12 +30,12 @@
     "cpuidle.off=1"
     "clk_ignore_unused"
     "pd_ignore_unused"
-    # M4 cores lose x0-x30 on WFI/WFIT (iBoot locks CYC_OVRD, which on M1-M3
-    # keeps WFI retentive). m1n1's kboot appends these two itself, but
-    # U-Boot replaces the command line with the extlinux APPEND, so they
-    # must be ours: without them every secondary CPU crashes on its first
-    # idle (pc 0, all registers zero).
-    "idle=nop"
+    # M4 cores lose their registers on WFI and WFIT (iBoot locks CYC_OVRD,
+    # which on M1-M3 keeps WFI retentive). Kernel patch 0024 saves them
+    # around the idle WFI, so cores idle instead of spinning; timed waits
+    # (WFIT in udelay) stay off. m1n1's kboot appends idle=nop
+    # arm64.nowfxt itself, but U-Boot replaces the command line with the
+    # extlinux APPEND, so this one must be ours.
     "arm64.nowfxt"
   ];
   systemd.services."serial-getty@ttyDC0".enable = true;
