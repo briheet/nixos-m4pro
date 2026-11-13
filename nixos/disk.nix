@@ -14,7 +14,10 @@
 { config, lib, pkgs, ... }:
 
 {
-  imports = [ ./common.nix ];
+  imports = [
+    ./common.nix
+    ./m1n1-boot.nix
+  ];
 
   fileSystems."/" = {
     device = "/dev/disk/by-partlabel/nixos";
@@ -28,4 +31,6 @@
 
   boot.loader.generic-extlinux-compatible.enable = true;
   hardware.deviceTree.name = "apple/t6040-j614s.dtb";
+
+  boot.m1n1.stage2 = "${pkgs.callPackage ../pkgs/m1n1.nix { release = false; }}/lib/m1n1/m1n1.bin";
 }

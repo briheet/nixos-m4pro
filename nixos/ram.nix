@@ -9,7 +9,7 @@
 # the installed system (disk.nix, passed in as diskSystem) is in this
 # image's store, and m4pro-install (pkgs/m4pro-install.nix) partitions,
 # formats and installs it.
-{ config, lib, pkgs, modulesPath, diskSystem, ... }:
+{ config, lib, pkgs, modulesPath, diskSystem, espPartuuid, ... }:
 
 {
   imports = [
@@ -24,7 +24,7 @@
   # image's store.
   environment.systemPackages = [
     (pkgs.callPackage ../pkgs/m4pro-install.nix {
-      inherit diskSystem;
+      inherit diskSystem espPartuuid;
       inherit (config.system.build) nixos-install;
     })
   ];

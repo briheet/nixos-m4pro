@@ -13,6 +13,10 @@
         "x86_64-linux"
       ];
       each = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+
+      # The PARTUUID of the ESP (p4, nixos-boot). m4pro-install gives the
+      # partition this UUID, and m1n1 stage 1 chainloads from it.
+      espPartuuid = "c1689edb-3947-4ed4-ba55-696ead4f2833";
     in
     {
       packages = each (
@@ -47,6 +51,14 @@
             m1n1 = pkgs.callPackage ./pkgs/m1n1.nix { };
             m1n1-dev = pkgs.callPackage ./pkgs/m1n1.nix { release = false; };
 
+            # Stage 1 for the macostest volume: the release m1n1 with its
+            # config lines appended, as the Asahi installer writes them.
+            m1n1-stage1 = pkgs.runCommand "m1n1-stage1.bin" { } ''
+              cat ${self.packages.aarch64-linux.m1n1}/lib/m1n1/m1n1.bin > $out
+              printf 'chainload=%s;m1n1/boot.bin\nchosen.asahi,efi-system-partition=%s\n' \
+                ${espPartuuid} ${espPartuuid} >> $out
+            '';
+
             # Everything the host sends m1n1 to boot the J614s
             # (tools/tether-boot.py, `just boot-ram` and `just boot-disk`):
             # the kernel and device tree, and for each system its initrd and
@@ -71,7 +83,10 @@
       # It carries the installed system (m4pro) to put on the SSD.
       nixosConfigurations.m4pro-ram = nixpkgs.lib.nixosSystem {
         modules = [ ./nixos/ram.nix ];
-        specialArgs.diskSystem = self.nixosConfigurations.m4pro.config.system.build.toplevel;
+        specialArgs = {
+          diskSystem = self.nixosConfigurations.m4pro.config.system.build.toplevel;
+          inherit espPartuuid;
+        };
       };
 
       # NixOS on the internal SSD.

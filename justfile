@@ -55,11 +55,11 @@ build: builder
       mkdir -p build/out && cp -fL $out/* build/out/ && chmod 644 build/out/*'
     ls -l build/out
 
-# Build m1n1 into build/out: `release` (stage 1 for the boot chain) or `dev` (the bring-up build).
-m1n1 variant="release": builder
+# Build m1n1 into build/out: `stage1` (release + chainload to the ESP) or `dev` (the bring-up proxy build).
+m1n1 variant="stage1": builder
     docker exec -w /work {{builder}} sh -c '\
-      out=$(nix build --no-link --print-out-paths .#{{ if variant == "dev" { "m1n1-dev" } else { "m1n1" } }}) && \
-      mkdir -p build/out && cp -fL $out/lib/m1n1/m1n1.bin build/out/m1n1-{{variant}}.bin && \
+      out=$(nix build --no-link --print-out-paths .#m1n1-{{variant}}) && \
+      mkdir -p build/out && cp -fL $( [ -f $out ] && echo $out || echo $out/lib/m1n1/m1n1.bin ) build/out/m1n1-{{variant}}.bin && \
       chmod 644 build/out/m1n1-{{variant}}.bin'
     shasum -a 256 build/out/m1n1-{{variant}}.bin
 
@@ -115,7 +115,8 @@ flash: flash-partition flash-format flash-system
 
 # --- m1n1 on the macostest volume (from 1TR recoveryOS) ----------------------
 
-# Serve m1n1 for `sh <(curl HOST:8000)` in recoveryOS over the USB link (en11).
-m1n1-serve variant="dev": (m1n1 variant)
+# Stage 2 is not served: NixOS installs it on the ESP (nixos/m1n1-boot.nix).
+# Serve the kmutil script that installs a m1n1 variant (default stage 1) on the USB link (en11).
+m1n1-serve variant="stage1": (m1n1 variant)
     addr=$(ipconfig getifaddr en11) && echo "in recoveryOS Terminal: sh <(curl $addr:8000)" && \
       .venv-m1n1/bin/python upstream/m1n1/tools/kmutil.py -b "$addr" -p 8000 build/out/m1n1-{{variant}}.bin

@@ -2,7 +2,8 @@
 # internal SSD, in the free space macOS leaves after its APFS container is
 # shrunk (`diskutil apfs resizeContainer disk0s2 <size>` in macOS).
 #
-#   m4pro-install partition   create p4 nixos-boot (512 MiB, ESP type) and
+#   m4pro-install partition   create p4 nixos-boot (512 MiB, ESP type, with
+#                             the PARTUUID m1n1 stage 1 chainloads from) and
 #                             p5 nixos (the rest) in the largest free block
 #   m4pro-install format      FAT32 on nixos-boot, ext4 on nixos
 #   m4pro-install system      nixos-install the system built into this image
@@ -11,7 +12,7 @@
 # or repaired. `partition` and `format` refuse to touch a disk that already
 # has the NixOS partitions or filesystems; `system` installs a new
 # generation and is also how the installed system is updated.
-{ writeShellApplication, gptfdisk, e2fsprogs, dosfstools, util-linux, coreutils, gnugrep, systemd, nixos-install, diskSystem }:
+{ writeShellApplication, gptfdisk, e2fsprogs, dosfstools, util-linux, coreutils, gnugrep, systemd, nixos-install, diskSystem, espPartuuid }:
 
 writeShellApplication {
   name = "m4pro-install";
@@ -21,6 +22,7 @@ writeShellApplication {
     boot=/dev/disk/by-partlabel/nixos-boot
     root=/dev/disk/by-partlabel/nixos
     system=${diskSystem}
+    esp_partuuid=${espPartuuid}
 
     die() { echo "m4pro-install: $*" >&2; exit 1; }
 
@@ -58,7 +60,7 @@ writeShellApplication {
       echo "GPT saved to /root/gpt-before.bin: $(sha256sum /root/gpt-before.bin | cut -d' ' -f1)"
 
       local bootend=$((first + 536870912 / ss - 1))
-      sgdisk -n "4:$first:$bootend" -t 4:ef00 -c 4:nixos-boot \
+      sgdisk -n "4:$first:$bootend" -t 4:ef00 -c 4:nixos-boot -u "4:$esp_partuuid" \
              -n "5:$((bootend + 1)):$last" -t 5:8300 -c 5:nixos "$disk"
       sgdisk -v "$disk" | grep -q "No problems found" || die "sgdisk -v reports problems"
       blockdev --rereadpt "$disk"
