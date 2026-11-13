@@ -164,9 +164,9 @@ set-password user:
 update branch="nixos-on-ssd":
     #!/usr/bin/env bash
     set -euo pipefail
-    tools/m4sh "rm -rf /root/nixos-m4pro && mkdir -p /root/nixos-m4pro && curl -sfL https://github.com/briheet/nixos-m4pro/archive/refs/heads/{{branch}}.tar.gz | tar -xz -C /root/nixos-m4pro --strip-components=1 && systemctl reset-failed m4update 2>/dev/null; systemd-run --unit=m4update --working-directory=/root/nixos-m4pro sh -c 'nix build --print-build-logs --out-link /root/m4update-result path:/root/nixos-m4pro#nixosConfigurations.m4pro.config.system.build.toplevel && nix-env -p /nix/var/nix/profiles/system --set \$(readlink /root/m4update-result) && /root/m4update-result/bin/switch-to-configuration switch'" 120
+    tools/m4sh "rm -rf /root/nixos-m4pro && mkdir -p /root/nixos-m4pro && curl -sfL https://github.com/briheet/nixos-m4pro/archive/refs/heads/{{branch}}.tar.gz | tar -xz -C /root/nixos-m4pro --strip-components=1 && systemctl reset-failed m4update 2>/dev/null; systemd-run --unit=m4update --setenv=PATH=/run/current-system/sw/bin --working-directory=/root/nixos-m4pro sh -c 'nix build --print-build-logs --out-link /root/m4update-result path:/root/nixos-m4pro#nixosConfigurations.m4pro.config.system.build.toplevel && nix-env -p /nix/var/nix/profiles/system --set \$(readlink /root/m4update-result) && /root/m4update-result/bin/switch-to-configuration switch'" 120
     for i in $(seq 720); do
-      s=$(tools/m4sh "systemctl is-active m4update" 15 2>/dev/null | tail -n 1)
+      s=$(tools/m4sh "systemctl is-active m4update" 15 2>/dev/null | tail -n 1 || true)
       [ "$s" = "active" ] || [ "$s" = "activating" ] || break
       sleep 10
     done
