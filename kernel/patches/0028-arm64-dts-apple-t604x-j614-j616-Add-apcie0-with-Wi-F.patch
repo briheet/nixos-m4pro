@@ -1,0 +1,172 @@
+From 91793b77ce2c63192ab75444fda01acc5f8f1fac Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 12:25:19 +0000
+Subject: [PATCH 28/28] arm64: dts: apple: t604x-j614-j616: Add apcie0 with
+ Wi-Fi and Bluetooth
+
+The PCIe DART (ADT dart-apcie0) in the SoC file and, for J614/J616,
+apcie0 port 0 with the BCM4388 Wi-Fi and Bluetooth functions, the wifi0 and
+bluetooth0 aliases m1n1 fills in from the ADT, the CLKREQ pin, SMC GPIO 0x13
+for port power and AP GPIO 4 for its reset. From aurora-silicon's
+t604x-j614-j616.dtsi; m1n1 brings up the controller and PHY.
+---
+ arch/arm64/boot/dts/apple/t6040-j614s.dts     |  9 ++
+ arch/arm64/boot/dts/apple/t6041.dtsi          | 13 +++
+ .../arm64/boot/dts/apple/t604x-j614-j616.dtsi | 93 +++++++++++++++++++
+ 3 files changed, 115 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/apple/t6040-j614s.dts b/arch/arm64/boot/dts/apple/t6040-j614s.dts
+index 77114cb09..59a3a80df 100644
+--- a/arch/arm64/boot/dts/apple/t6040-j614s.dts
++++ b/arch/arm64/boot/dts/apple/t6040-j614s.dts
+@@ -38,6 +38,15 @@ aliases {
+ 	};
+ };
+ 
++/* The BCM4388 module of this model (ADT /arm-io/wlan module-instance). */
++&wifi0 {
++	brcm,board-type = "apple,mriya";
++};
++
++&bluetooth0 {
++	brcm,board-type = "apple,mriya";
++};
++
+ &smc_mbox {
+ 	status = "okay";
+ };
+diff --git a/arch/arm64/boot/dts/apple/t6041.dtsi b/arch/arm64/boot/dts/apple/t6041.dtsi
+index e63f6d1e1..c9fa219b9 100644
+--- a/arch/arm64/boot/dts/apple/t6041.dtsi
++++ b/arch/arm64/boot/dts/apple/t6041.dtsi
+@@ -632,6 +632,19 @@ mtp_mbox: mbox@514608000 {
+ 			status = "disabled";
+ 		};
+ 
++		/*
++		 * DART for apcie0 (Wi-Fi and Bluetooth): ADT /arm-io/dart-apcie0,
++		 * IRQ 1724. The PCIe driver maps requester IDs to streams itself.
++		 */
++		pcie_dart: iommu@410000000 {
++			compatible = "apple,t6041-dart", "apple,t8110-dart";
++			reg = <0x4 0x10000000 0x0 0x20000>;
++			#iommu-cells = <1>;
++			interrupt-parent = <&aic>;
++			interrupts = <AIC_IRQ 1724 IRQ_TYPE_LEVEL_HIGH>;
++			status = "disabled";
++		};
++
+ 		mtp_dart: iommu@514800000 {
+ 			compatible = "apple,t6041-dart", "apple,t8110-dart";
+ 			reg = <0x5 0x14800000 0x0 0x4000>;
+diff --git a/arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi b/arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi
+index 1ba4cac70..00ea206b2 100644
+--- a/arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi
++++ b/arch/arm64/boot/dts/apple/t604x-j614-j616.dtsi
+@@ -10,6 +10,7 @@
+  * Copyright The Asahi Linux Contributors
+  */
+ 
++#include <dt-bindings/gpio/gpio.h>
+ #include <dt-bindings/leds/common.h>
+ 
+ / {
+@@ -115,3 +116,95 @@ tp-accel {
+ 	mtp {
+ 	};
+ };
++
++/*
++ * Wi-Fi and Bluetooth (BCM4388 C2) on apcie0 port 0. m1n1 finds the nodes
++ * by the wifi0 and bluetooth0 aliases and adds the calibration, the antenna
++ * SKU and the addresses from the ADT. Port power is SMC GPIO 0x13, reset AP
++ * GPIO 4 (aurora-silicon t604x-j614-j616.dtsi; m1n1 brings up the
++ * controller and PHY, as for T8132).
++ */
++/ {
++	aliases {
++		wifi0 = &wifi0;
++		bluetooth0 = &bluetooth0;
++	};
++
++	pcie0: pcie@1cb0000000 {
++		compatible = "apple,t6041-pcie", "apple,t6020-pcie";
++		reg = <0x1c 0xb0000000 0x0 0x1000000>,	/* config */
++		      <0x4 0x14000000 0x0 0x4000>,	/* rc */
++		      <0x4 0x10028000 0x0 0x4000>,	/* port0 */
++		      <0x4 0x11028000 0x0 0x4000>,	/* port1 */
++		      <0x4 0x12028000 0x0 0x4000>,	/* port2 */
++		      <0x4 0x13028000 0x0 0x4000>,	/* port3 */
++		      <0x4 0x17020000 0x0 0x4000>,	/* phy0 */
++		      <0x4 0x17024000 0x0 0x4000>,	/* phy1 */
++		      <0x4 0x17028000 0x0 0x4000>,	/* phy2 */
++		      <0x4 0x1702c000 0x0 0x4000>;	/* phy3 */
++		reg-names = "config", "rc",
++			    "port0", "port1", "port2", "port3",
++			    "phy0", "phy1", "phy2", "phy3";
++		ranges = <0x43000000 0xb 0xc0000000 0xb 0xc0000000 0x0 0x20000000>,
++			 <0x02000000 0x0 0x80000000 0xb 0x80000000 0x0 0x40000000>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&wifi_clkreq_pins>;
++		#address-cells = <3>;
++		#size-cells = <2>;
++		bus-range = <0 1>;
++		iommu-map-mask = <0xffff>;
++		iommu-map = <0x100 &pcie_dart 1 2>;
++		msi-ranges = <&aic AIC_IRQ 2071 IRQ_TYPE_EDGE_RISING 32>;
++		msi-parent = <&pcie0>;
++		msi-controller;
++		interrupts = <AIC_IRQ 1723 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-parent = <&aic>;
++		/*
++		 * The general-purpose PCIe domains (apcie_sys_gp and its
++		 * parents apcie_gp, fab3_soc): unused, Linux turns them off
++		 * at late init, and the next config access is an SError.
++		 */
++		power-domains = <&ps_apcie_sys_gp>;
++		device_type = "pci";
++
++		port00: pci@0,0 {
++			reg = <0 0 0 0 0>;
++			ranges;
++			interrupt-map = <0 0 0 1 &port00 0 0 0 0>,
++					<0 0 0 2 &port00 0 0 0 1>,
++					<0 0 0 3 &port00 0 0 0 2>,
++					<0 0 0 4 &port00 0 0 0 3>;
++			interrupt-map-mask = <0 0 0 7>;
++			#interrupt-cells = <1>;
++			interrupt-controller;
++			#address-cells = <3>;
++			#size-cells = <2>;
++			pwren-gpios = <&smc_gpio 0x13 GPIO_ACTIVE_HIGH>;
++			reset-gpios = <&pinctrl_ap 4 GPIO_ACTIVE_LOW>;
++			device_type = "pci";
++
++			bluetooth0: bluetooth@0,1 {
++				compatible = "pci14e4,5f72";
++				reg = <0x100 0 0 0 0>;
++				/* To be filled by the loader */
++				local-bd-address = [00 00 00 00 00 00];
++			};
++
++			wifi0: wifi@0,0 {
++				compatible = "pci14e4,4434", "brcm,bcm4329-fmac";
++				reg = <0 0 0 0 0>;
++				brcm,ccode-map-trivial;
++			};
++		};
++	};
++};
++
++&pinctrl_ap {
++	wifi_clkreq_pins: wifi-clkreq-pins {
++		pinmux = <APPLE_PINMUX(0, 1)>;
++	};
++};
++
++&pcie_dart {
++	status = "okay";
++};
+-- 
+2.47.0
+

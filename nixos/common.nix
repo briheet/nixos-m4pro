@@ -41,17 +41,30 @@
   # loads it uncompressed (no FW_LOADER_COMPRESS).
   hardware.firmware = [ (pkgs.callPackage ../pkgs/j614s-firmware.nix { }) ];
   hardware.firmwareCompression = "none";
-  nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "tpmtfw-j614s.bin";
-  # The trackpad asks for its firmware as soon as the MTP announces it,
-  # while the initrd still runs.
-  boot.initrd.extraFirmwarePaths = [ "apple/tpmtfw-j614s.bin" ];
+  nixpkgs.config.allowUnfreePredicate =
+    pkg: builtins.elem (lib.getName pkg) [ "tpmtfw-j614s.bin" "brcm-mriya.tar" ];
+  # The trackpad, Wi-Fi and Bluetooth ask for their firmware as soon as
+  # they probe, while the initrd still runs.
+  boot.initrd.extraFirmwarePaths = [
+    "apple/tpmtfw-j614s.bin"
+    "brcm/brcmfmac4388c2-pcie.apple,mriya-WLMT-a.txt"
+    "brcm/brcmfmac4388c2-pcie.apple,mriya-WLMT-u.txt"
+    "brcm/brcmfmac4388c2-pcie.apple,mriya.bin"
+    "brcm/brcmfmac4388c2-pcie.apple,mriya.clm_blob"
+    "brcm/brcmfmac4388c2-pcie.apple,mriya.sig"
+    "brcm/brcmfmac4388c2-pcie.apple,mriya.txcap_blob"
+    "brcm/brcmbt4388c2-apple,mriya-a.bin"
+    "brcm/brcmbt4388c2-apple,mriya-a.ptb"
+    "brcm/brcmbt4388c2-apple,mriya-u.bin"
+    "brcm/brcmbt4388c2-apple,mriya-u.ptb"
+  ];
 
   # Logins. The screen asks for a password. Root is locked, but logs in by
   # itself on the debug-USB console (ttyDC0): reaching it takes the cable to
   # the host, and tools/m4sh drives the machine through it.
   users.users.briheet = {
     isNormalUser = true;
-    extraGroups = [ "wheel" "video" "input" ];
+    extraGroups = [ "wheel" "video" "input" "networkmanager" ];
     # No password in this (public) repo: `just set-password briheet` sets
     # one from the host, sending only its hash.
   };
@@ -67,10 +80,11 @@
     ];
   };
 
-  # No network device yet (Wi-Fi needs PCIe), and the kernel has no
-  # netfilter. Turn the firewall back on with the network and nftables.
+  # Wi-Fi (BCM4388 on apcie0) through NetworkManager: `nmtui` or
+  # `nmcli device wifi connect SSID --ask`. The kernel has no netfilter
+  # yet, so no firewall until nftables is in.
+  networking.networkmanager.enable = true;
   networking.firewall.enable = false;
-  networking.dhcpcd.enable = false;
 
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
