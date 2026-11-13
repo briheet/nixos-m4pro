@@ -18,31 +18,56 @@ OUT = REPO / "build" / "macos" / VOL
 ADDR = os.environ.get("BIND") or subprocess.run(["ipconfig", "getifaddr", "en11"], capture_output=True, text=True).stdout.strip()
 
 SCRIPT = f"""#!/bin/sh
-set -eu
+set -u
 H=http://{ADDR}:8000
 VOL={VOL}
-mnt=/Volumes/$VOL
-[ -d "$mnt" ] || diskutil mount "$VOL" >/dev/null
-vg=$(diskutil info "$mnt" | awk -F': *' '/APFS Volume Group/ {{print $2}}' | awk '{{print $1}}')
-[ -n "$vg" ] || {{ echo "no APFS volume group for $mnt"; exit 1; }}
-echo "volume group: $vg"
+fail() {{ echo "FAILED: $*"; curl -s "$H/fail" >/dev/null; exit 1; }}
+echo "1. finding volume $VOL"
+# diskutil wraps names in Unicode isolation marks; match on the name alone
+# and skip the "<name> - Data" volume of the same group.
+dev=$(diskutil list | grep 'APFS Volume' | grep -i -F "$VOL" | grep -v -e '- Data' -e 'Snapshot' | awk '{{print $NF; exit}}')
+if [ -z "$dev" ]; then
+  echo "APFS volumes seen:"; diskutil list | grep 'APFS Volume'
+  fail "no APFS volume named $VOL in diskutil list"
+fi
+echo "   device $dev"
+vg=$(diskutil info "$dev" | awk -F': *' '/APFS Volume Group/ {{print $2}}' | awk '{{print $1}}')
+[ -n "$vg" ] || fail "no APFS volume group for $dev"
+echo "2. volume group $vg"
 pb=""
-for d in $(diskutil list | awk '/Preboot/ {{print $NF}}'); do
+for d in $(diskutil list | awk '/APFS Volume Preboot/ {{print $NF}}'); do
   m=$(diskutil info "$d" | awk -F': *' '/Mount Point/ {{print $2}}')
-  [ -n "$m" ] && [ -d "$m" ] || {{ diskutil mount "$d" >/dev/null; m=$(diskutil info "$d" | awk -F': *' '/Mount Point/ {{print $2}}'); }}
-  [ -d "$m/$vg" ] && pb="$m/$vg" && break
+  if [ -z "$m" ] || [ ! -d "$m" ]; then
+    diskutil mount readOnly "$d" >/dev/null 2>&1
+    m=$(diskutil info "$d" | awk -F': *' '/Mount Point/ {{print $2}}')
+  fi
+  echo "   Preboot $d at $m"
+  if [ -n "$m" ] && [ -d "$m/$vg" ]; then pb="$m/$vg"; break; fi
 done
-[ -n "$pb" ] || {{ echo "Preboot directory for $vg not found"; exit 1; }}
-echo "preboot: $pb"
-send() {{ echo "upload $(basename "$1")"; curl -sfT "$1" "$H/$(basename "$1")"; }}
-for f in "$pb"/boot/*/System/Library/Caches/com.apple.kernelcaches/kernelcache; do send "$f"; done
-for f in "$pb"/restore/Firmware/sptm.*.release.im4p "$pb"/restore/Firmware/txm.macosx.release.im4p; do send "$f"; done
+[ -n "$pb" ] || fail "Preboot directory for $vg not found"
+echo "3. preboot $pb"
+send() {{ [ -f "$1" ] || fail "missing $1"; echo "   upload $1 as $2"; curl -sfT "$1" "$H/$2" || fail "upload of $1"; }}
+ls -la "$pb"/boot/
+for f in "$pb"/boot/*/System/Library/Caches/com.apple.kernelcaches/kernelcache; do
+  h=$(basename "$(dirname "$(dirname "$(dirname "$(dirname "$(dirname "$f")")")")")")
+  send "$f" "kernelcache.$h"
+done
+for f in "$pb"/boot/*/System/Library/CoreServices/SystemVersion.plist "$pb"/System/Library/CoreServices/SystemVersion.plist; do
+  [ -f "$f" ] && send "$f" "SystemVersion.$(echo "$f" | md5 | cut -c1-8).plist"
+done
+diskutil mount readOnly "$dev" >/dev/null 2>&1
+sm=$(diskutil info "$dev" | awk -F': *' '/Mount Point/ {{print $2}}')
+[ -f "$sm/System/Library/CoreServices/SystemVersion.plist" ] && send "$sm/System/Library/CoreServices/SystemVersion.plist" "SystemVersion.system.plist"
+for f in "$pb"/restore/Firmware/sptm.*.release.im4p "$pb"/restore/Firmware/txm.macosx.release.im4p; do send "$f" "$(basename "$f")"; done
 curl -sf "$H/done" >/dev/null
-echo "all uploaded"
+echo "4. all uploaded"
 """
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
+        print(f"GET {self.path} from {self.client_address[0]}", flush=True)
+        if self.path == "/fail":
+            self.send_response(200); self.end_headers(); print("recoveryOS script FAILED (see its output)", flush=True); return
         if self.path == "/done":
             self.send_response(200); self.end_headers()
             print("recoveryOS reports all files uploaded", flush=True)
