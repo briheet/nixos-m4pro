@@ -157,6 +157,21 @@ set-password user:
     hash=$(nix shell nixpkgs#mkpasswd -c mkpasswd -m sha-512)
     tools/m4sh "usermod -p '$hash' {{user}} && echo password set for {{user}}" 20
 
+# Update the installed system on the Mac itself, over its own network: fetch
+# this branch from GitHub (push first), build natively and switch live. The
+# boot menu gets the new generation too. Runs as a systemd unit on the Mac,
+# so a dropped console does not stop it.
+update branch="nixos-on-ssd":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tools/m4sh "rm -rf /root/nixos-m4pro && mkdir -p /root/nixos-m4pro && curl -sfL https://github.com/briheet/nixos-m4pro/archive/refs/heads/{{branch}}.tar.gz | tar -xz -C /root/nixos-m4pro --strip-components=1 && systemctl reset-failed m4update 2>/dev/null; systemd-run --unit=m4update --working-directory=/root/nixos-m4pro sh -c 'nix build --print-build-logs --out-link /root/m4update-result path:/root/nixos-m4pro#nixosConfigurations.m4pro.config.system.build.toplevel && nix-env -p /nix/var/nix/profiles/system --set \$(readlink /root/m4update-result) && /root/m4update-result/bin/switch-to-configuration switch'" 120
+    for i in $(seq 720); do
+      s=$(tools/m4sh "systemctl is-active m4update" 15 2>/dev/null | tail -n 1)
+      [ "$s" = "active" ] || [ "$s" = "activating" ] || break
+      sleep 10
+    done
+    tools/m4sh "systemctl show m4update -p Result; journalctl -u m4update --no-pager | grep -v 'copying path' | tail -n 8; readlink /run/current-system" 30
+
 # A first install: partition, format and install.
 flash: flash-partition flash-format flash-system
 
