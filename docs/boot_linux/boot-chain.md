@@ -20,8 +20,8 @@ Each stage has its own job, and only stage 1 needs a trip to recoveryOS. Stage 2
 
 | # | Step | Status |
 |---|---|---|
-| 1 | **m1n1 stage 1**, release build with chainloading: `just m1n1` builds it from the pinned source with m1n1/patches. It gets one config line, `chainload=<nvme0n1p4 PARTUUID>;m1n1/boot.bin`, and is installed on `macostest` from 1TR recoveryOS with `kmutil` (`just m1n1-serve`). | Builds and runs (`tools/m1n1-try`). Not installed: blocked by the ANS sleep crash below. |
-| 2 | **Chainloading on M4.** Stage 1 starts stage 2 in place. | Works, and Linux keeps the SSD afterwards (pmp.md) |
+| 1 | **m1n1 stage 1**, release build with chainloading: `just m1n1` builds it from the pinned source with m1n1/patches. It gets one config line, `chainload=<nvme0n1p4 PARTUUID>;m1n1/boot.bin`, and is installed on `macostest` from 1TR recoveryOS with `kmutil` (`just m1n1-serve`). | **Installed and working** (2026-11-13): Nix-built release m1n1, padded to 0x3f4000, chainloads stage 2 from the ESP on every power-on. |
+| 2 | **Chainloading on M4.** Stage 1 starts stage 2 in place. | Works from power-on; Linux keeps the SSD afterwards (pmp.md) |
 | 3 | **m1n1 stage 2 as part of the NixOS system**: `m1n1/boot.bin` = m1n1 + `t6040-j614s.dtb` + U-Boot, written to the ESP by the boot loader (as nixos-apple-silicon's `boot-m1n1` module does with `boot.loader.systemd-boot.extraFiles`). | Not started |
 | 4 | **U-Boot for the M4 Pro**: Asahi's U-Boot (`apple_m1_defconfig`) takes its device tree from m1n1. It needs the M4 NVMe changes this kernel needed (controller through ADT reg 9 via the device tree, and the I/O queue registers from Linux commit 304bc392), plus a way to read the keyboard for the menu (the MTP dockchannel HID). | Not started |
 | 5 | **EFI kernel and systemd-boot**: `CONFIG_EFI` and `CONFIG_EFI_STUB` in kernel/m4pro-nixos.config, then `boot.loader.systemd-boot.enable = true` with `boot.loader.efi.canTouchEfiVariables = false` in nixos/disk.nix, replacing the extlinux entry. | Not started (`CONFIG_EFI` is off) |
