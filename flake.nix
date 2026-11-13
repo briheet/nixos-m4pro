@@ -67,6 +67,7 @@
           {
             m1n1 = pkgs.callPackage ./pkgs/m1n1.nix { };
             m1n1-dev = pkgs.callPackage ./pkgs/m1n1.nix { release = false; };
+            u-boot = pkgs.callPackage ./pkgs/u-boot.nix { };
 
             # Stage 1 for the macostest volume: the release m1n1 with its
             # config lines appended, as the Asahi installer writes them.

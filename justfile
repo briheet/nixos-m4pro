@@ -148,6 +148,39 @@ flash-system:
 # A first install: partition, format and install.
 flash: flash-partition flash-format flash-system
 
+# Reboots, stops U-Boot over debug USB and copies m1n1/dev.bin (the debug
+# m1n1) over m1n1/boot.bin; `just restart` works again until the next
+# flash-system or nixos-rebuild writes the U-Boot stage 2 back.
+# Back to the USB proxy (debug m1n1 as stage 2) from the U-Boot boot chain.
+stage2-proxy:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    pkill -f 'tools/tether-boot.py|tools/m4console' || true
+    sudo -n {{vdm}} reboot | tail -n 1
+    rm -f build/console.log
+    for i in $(seq 60); do
+      sudo -n {{vdm}} debugusb >/dev/null 2>&1 || true
+      [ -e {{port}} ] && break; sleep 0.5
+    done
+    nohup .venv-m1n1/bin/python tools/m4console --pad64 {{port}} > build/m4console.out 2>&1 &
+    # A key before U-Boot's autoboot check stops it (bootdelay 0).
+    for i in $(seq 300); do
+      grep -q "=> " build/console.log 2>/dev/null && break
+      printf ' \n' > build/console.in; sleep 0.1
+    done
+    grep -q "=> " build/console.log || { echo "no U-Boot prompt" >&2; exit 1; }
+    sleep 1
+    for c in 'load nvme 0:4 ${loadaddr} m1n1/dev.bin' \
+             'fatwrite nvme 0:4 ${loadaddr} m1n1/boot.bin ${filesize}'; do
+      printf '%s\n' "$c" > build/console.in; sleep 3
+    done
+    tail -n 6 build/console.log | tr -d '\r'
+    grep -q "bytes written" build/console.log || { echo "fatwrite failed; still at the U-Boot prompt" >&2; exit 1; }
+    printf 'reset\n' > build/console.in
+    sleep 2; pkill -f tools/m4console || true
+    for i in $(seq 60); do ls {{m1n1_usb}} >/dev/null 2>&1 && break; sleep 1; done
+    ls {{m1n1_usb}} && echo "debug m1n1 (proxy) is stage 2 now"
+
 # --- m1n1 on the macostest volume (from 1TR recoveryOS) ----------------------
 
 # Recovery path for a broken stage 2: serve m1n1-dev.bin (port 8001) to copy onto the ESP from recoveryOS.

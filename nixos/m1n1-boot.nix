@@ -6,9 +6,8 @@
 # switch or nixos-install writes the stage 2 that goes with it, as
 # nixos-apple-silicon's boot-m1n1 module does.
 #
-# Stage 2 is the debug m1n1 for now, which runs the USB proxy: it proves
-# stage 1 chainloads on this machine and keeps the tethered workflow. The
-# boot chain replaces it with m1n1 + device tree + U-Boot.
+# Stage 2 is m1n1 + device tree + U-Boot (nixos/disk.nix). The debug m1n1
+# goes beside it as m1n1/dev.bin, for going back to the USB proxy.
 { config, lib, pkgs, ... }:
 
 let
@@ -19,6 +18,11 @@ in
   options.boot.m1n1.stage2 = lib.mkOption {
     type = lib.types.path;
     description = "The file installed as /boot/m1n1/boot.bin.";
+  };
+  options.boot.m1n1.devStage2 = lib.mkOption {
+    type = lib.types.nullOr lib.types.path;
+    default = null;
+    description = "Installed as /boot/m1n1/dev.bin, to copy over boot.bin for the USB proxy.";
   };
 
   config = {
@@ -38,6 +42,9 @@ in
         ${pkgs.coreutils}/bin/install -D -m 644 ${cfg.stage2} /boot/m1n1/boot.bin.new
         ${pkgs.coreutils}/bin/sync -f /boot/m1n1/boot.bin.new
         ${pkgs.coreutils}/bin/mv /boot/m1n1/boot.bin.new /boot/m1n1/boot.bin
+        ${lib.optionalString (cfg.devStage2 != null) ''
+          ${pkgs.coreutils}/bin/install -D -m 644 ${cfg.devStage2} /boot/m1n1/dev.bin
+        ''}
       ''
     );
   };

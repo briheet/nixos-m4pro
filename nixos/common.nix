@@ -30,6 +30,13 @@
     "cpuidle.off=1"
     "clk_ignore_unused"
     "pd_ignore_unused"
+    # M4 cores lose x0-x30 on WFI/WFIT (iBoot locks CYC_OVRD, which on M1-M3
+    # keeps WFI retentive). m1n1's kboot appends these two itself, but
+    # U-Boot replaces the command line with the extlinux APPEND, so they
+    # must be ours: without them every secondary CPU crashes on its first
+    # idle (pc 0, all registers zero).
+    "idle=nop"
+    "arm64.nowfxt"
   ];
   systemd.services."serial-getty@ttyDC0".enable = true;
 

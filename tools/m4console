@@ -49,7 +49,9 @@ def main():
     args = sys.argv[1:]
     pad = "--pad64" in args
     args = [a for a in args if a != "--pad64"]
-    port = serial.Serial(args[0], 115200, timeout=0)
+    # Reads never block (select decides); writes wait for a slow reader
+    # (U-Boot drains its input only between commands).
+    port = serial.Serial(args[0], 115200, timeout=0, write_timeout=10)
     RUN.mkdir(parents=True, exist_ok=True)
     current = REPO / "build/current"
     if current.is_symlink() or current.exists():
