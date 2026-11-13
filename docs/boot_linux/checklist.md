@@ -67,11 +67,11 @@ Each item has a check that marks it done. Items are ticked only after the check 
 - [x] **17. NVMe.** ANS, its mailbox and SART in t6041.dtsi; mainline 304bc392 "nvme: apple: add t8132 (M4) ANS2 NVMe support".
   Check: `nvme0n1` with its partitions, reads without errors.
   Result: `APPLE SSD AP0512Z`, GPT with p1 p2 p3, 2.3 GB/s sequential read. As on other M4-generation chips (the ADT has `nvme-secure-bar`), the controller must be driven through ADT `/arm-io/ans` reg 9 (0x44dcc0000): through reg 3 the linear-SQ register at 0x24908 raised an SError (m1n1 543667fe does the same).
-- [ ] **18. Install to disk.** Free space next to the macOS container, an EFI partition and a NixOS root, booted by m1n1 from `macostest` without the host.
+- [x] **18. Install to disk.** Free space next to the macOS container, an EFI partition and a NixOS root, booted by m1n1 from `macostest` without the host.
   Done so far: macOS container shrunk to 370 GB by the owner in macOS; p4 `nixos-boot` (512 MiB FAT32) and p5 `nixos` (115 GiB ext4) created in the free space from Linux (GPT backup in build/gpt-before.bin); `nixos-install --system` from the RAM image (`nixosConfigurations.m4pro`, nixos/disk.nix). NixOS boots from the SSD with only the kernel and initrd sent by the host (72 s to login), reaches `running`, and files persist across reboots.
   `systemctl reboot` restarts the machine back to m1n1 in 11 s (the watchdog restart handler).
   Reproducible with `just flash` (README.md).
-  Stage 1 on macOSTest chainloads stage 2 from the ESP on every power-on (boot-chain.md). Left: stage 2 = m1n1 + U-Boot + systemd-boot, so it boots NixOS without the host.
+  Since 2026-11-13 the Mac boots NixOS from power-on without the host: stage 1 on macOSTest, stage 2 (m1n1 + device tree + U-Boot) on the ESP, U-Boot's extlinux menu (boot-chain.md).
 
 ## Needed from the owner along the way
 

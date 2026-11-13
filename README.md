@@ -2,18 +2,19 @@
 
 NixOS on a 14-inch MacBook Pro with the M4 Pro (`Mac16,8`, board `J614s`, SoC `T6040`), which the Asahi installer does not support yet. Personal use: the patches here are written for this machine, not for upstream.
 
-NixOS runs from the internal SSD, with the screen, the internal keyboard and the SSD working. The kernel is still sent from a second Mac over debug USB at each boot; [docs/boot_linux/boot-chain.md](docs/boot_linux/boot-chain.md) is the plan for booting without it. [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md) tracks every piece of hardware.
+NixOS runs from the internal SSD, with the screen, the internal keyboard and the SSD working, and boots from power-on without the host: m1n1 → U-Boot → extlinux menu → NixOS ([docs/boot_linux/boot-chain.md](docs/boot_linux/boot-chain.md)). [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md) tracks every piece of hardware.
 
 ## What is in the repo
 
 | Path | What |
 |---|---|
-| `flake.nix` | `nixosConfigurations.m4pro` (on the SSD), `m4pro-ram` (from RAM, the installer), packages `boot-files`, `m1n1`, `m1n1-dev` |
-| `nixos/` | `common.nix` shared settings, `disk.nix` the installed system, `ram.nix` the installer, `kernel.nix` the kernel |
+| `flake.nix` | `nixosConfigurations.m4pro` (on the SSD), `m4pro-ram` (from RAM, the installer), packages `boot-files`, `m1n1`, `m1n1-dev`, `m1n1-stage1`, `u-boot` |
+| `nixos/` | `common.nix` shared settings, `disk.nix` the installed system, `ram.nix` the installer, `kernel.nix` the kernel, `m1n1-boot.nix` writes stage 2 to the ESP |
 | `kernel/patches/` | Patches on AsahiLinux/linux `6ba0637d`: device trees for J614s, the dockchannel console, keyboard, NVMe, and one mainline NVMe driver change |
 | `kernel/*.config` | Kernel configs; `m4pro-nixos.full.config` is the one NixOS builds |
-| `m1n1/patches/` | Three m1n1 fixes for T6040 (DAPF, CTRR, MCC) on m1n1 `cf37927d` |
-| `pkgs/` | `m1n1.nix` (nixpkgs' m1n1 at the pinned commit with the patches), `m4pro-install.nix` (the installer) |
+| `m1n1/patches/` | m1n1 fixes for T6040 on m1n1 `cf37927d` (DAPF, CTRR, MCC, ANS quiesce, chainload) |
+| `u-boot/patches/` | aurora-silicon U-Boot change for this boot chain (ANS handed over quiesced) |
+| `pkgs/` | `m1n1.nix` (nixpkgs' m1n1 at the pinned commit with the patches), `u-boot.nix`, `m4pro-install.nix` (the installer) |
 | `tools/` | Host side of the debug link: `tether-boot.py` (boot through m1n1), `m4boot`, `m4sh` |
 | `bin/`, `lib/` | `nixos-m4pro`, OCaml tools: ADT parser, PMGR device-tree generator, m1n1 proxy probes |
 | `docs/` | Bring-up notes, checklists, and the boot-chain plan |
@@ -51,27 +52,22 @@ Run everything below with `just`, from `nix develop` or `nix shell nixpkgs#just`
    just flash       # partition, format, install
    ```
    `partition` saves the GPT to `/root/gpt-before.bin` before changing it, and only adds partitions 4 and 5 in the free block between the macOS container and recoveryOS.
-5. **Boot it:**
-   ```
-   just restart
-   just dev-boot disk  # about 20 s
-   just sh "systemctl is-system-running"
-   ```
+5. **Boot it:** power on, or `sudo macvdmtool reboot`. Stage 1 on `macostest` loads the stage 2 the install wrote to the ESP, and U-Boot boots the newest generation after 5 s (about 90 s to login). Over debug USB the console is `ttyDC0`.
 
 ## Updating
 
-Change the flake, then `just build`, `just restart`, `just dev-boot ram`, `just flash-system` (adds a generation), `just restart`, `just dev-boot disk`. Once the Mac has a network this becomes an ordinary `nixos-rebuild`.
+Change the flake, then `just build`, `just stage2-proxy` (U-Boot has no USB proxy; this puts the debug m1n1 back as stage 2), `just restart`, `just dev-boot ram`, `just flash-system` (adds a generation and writes the U-Boot stage 2 back), and reboot. Once the Mac has a network this becomes an ordinary `nixos-rebuild`.
 
 ## m1n1 on the target
 
 m1n1 is installed as the boot object of `macostest` from 1TR recoveryOS (hold power, Options, then Utilities → Terminal):
 
 ```
-just m1n1-serve dev        # on the host: builds m1n1 and serves the kmutil script on the USB link
+just m1n1-serve stage1     # on the host: builds m1n1 and serves the kmutil script on the USB link
 sh <(curl <address>:8000)  # in recoveryOS, with the address it prints
 ```
 
-`dev` is the bring-up build installed today (debug USB proxy). `release` is the stage 1 for the boot chain.
+Installed today: `stage1` (release m1n1 that chainloads stage 2 from the ESP). `dev` is the bring-up build with the USB proxy.
 
 ## Recipes
 
@@ -85,7 +81,9 @@ sh <(curl <address>:8000)  # in recoveryOS, with the address it prints
 | `connect`, `boot-ram`, `boot-disk` | fallback: everything over debug USB (about 0.5 MB/s) |
 | `sh "cmd" [timeout]` | run a command on the target's root shell, with its exit status |
 | `flash-partition`, `flash-format`, `flash-system`, `flash` | install to the SSD |
-| `m1n1-serve [dev\|release]` | install m1n1 from recoveryOS |
+| `m1n1-serve [stage1\|dev]` | install m1n1 from recoveryOS |
+| `stage2-proxy` | from the U-Boot boot chain back to the USB proxy (debug m1n1 as stage 2) |
+| `stage2-serve` | serve the debug m1n1 to copy onto the ESP from recoveryOS, if stage 2 fails |
 
 Every boot is recorded under `build/runs/<time>/` (console log with timestamps, commands run, host log), with an index in `build/runs/index.md`.
 

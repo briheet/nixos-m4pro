@@ -1,33 +1,51 @@
 # Booting from the SSD without the host
 
-Today NixOS is installed on the SSD, but the kernel still comes from the host: m1n1 on `macostest` runs its USB proxy, and `just boot-disk` sends the kernel, device tree and initrd, which then mount the root filesystem from `nvme0n1p5`. This page is the plan for the standard chain Asahi Linux and nixos-apple-silicon use. With it the Mac powers on into NixOS by itself, the Apple startup picker chooses between macOS and NixOS, and a boot menu chooses between NixOS generations.
+Since 2026-11-13 the Mac powers on into NixOS by itself: no host, no debug USB. The Apple startup picker chooses between macOS and NixOS, and U-Boot's extlinux menu chooses between NixOS generations. This page records how the chain is built and what it took on the M4 Pro.
 
 ## The chain
 
 ```
 power on
   └─ iBoot (Apple)                       picks the volume: Startup Disk, or hold power for the picker
-      └─ m1n1 stage 1 on the stub volume  kmutil custom boot object; only reads its config and chains on
-          └─ m1n1 stage 2 on the ESP      nvme0n1p4:/m1n1/boot.bin = m1n1 + device trees + U-Boot
-              └─ U-Boot                    EFI firmware: NVMe, keyboard, framebuffer
-                  └─ systemd-boot          menu of NixOS generations
+      └─ m1n1 stage 1 on macostest        kmutil custom boot object; chainload=<ESP PARTUUID>;m1n1/boot.bin
+          └─ m1n1 stage 2 on the ESP      nvme0n1p4:/m1n1/boot.bin = release m1n1 + t6040-j614s.dtb + U-Boot
+              └─ U-Boot                    aurora-silicon fork: T6040 NVMe, dockchannel serial
+                  └─ extlinux menu         /boot/extlinux/extlinux.conf, one entry per generation (5 s)
                       └─ Linux + initrd    root on nvme0n1p5
 ```
 
-Each stage has its own job, and only stage 1 needs a trip to recoveryOS. Stage 2, U-Boot and the boot menu sit on the ESP, so `nixos-rebuild` (or `just flash-system`) updates them like any other generation.
+Only stage 1 needs a trip to recoveryOS. Stage 2, U-Boot and the menu sit on the ESP; `nixos/m1n1-boot.nix` writes stage 2 with the boot loader, so `nixos-rebuild` (or `just flash-system`) updates them with each generation. From power-on to the login prompt takes about 90 s.
 
-## What is left to do
+## Status
 
 | # | Step | Status |
 |---|---|---|
-| 1 | **m1n1 stage 1**, release build with chainloading: `just m1n1` builds it from the pinned source with m1n1/patches. It gets one config line, `chainload=<nvme0n1p4 PARTUUID>;m1n1/boot.bin`, and is installed on `macostest` from 1TR recoveryOS with `kmutil` (`just m1n1-serve`). | **Installed and working** (2026-11-13): Nix-built release m1n1, padded to 0x3f4000, chainloads stage 2 from the ESP on every power-on. |
-| 2 | **Chainloading on M4.** Stage 1 starts stage 2 in place. | Works from power-on; Linux keeps the SSD afterwards (pmp.md) |
-| 3 | **m1n1 stage 2 as part of the NixOS system**: `m1n1/boot.bin` = m1n1 + `t6040-j614s.dtb` + U-Boot, written to the ESP by the boot loader (as nixos-apple-silicon's `boot-m1n1` module does with `boot.loader.systemd-boot.extraFiles`). | Not started |
-| 4 | **U-Boot for the M4 Pro**: Asahi's U-Boot (`apple_m1_defconfig`) takes its device tree from m1n1. It needs the M4 NVMe changes this kernel needed (controller through ADT reg 9 via the device tree, and the I/O queue registers from Linux commit 304bc392), plus a way to read the keyboard for the menu (the MTP dockchannel HID). | Not started |
-| 5 | **EFI kernel and systemd-boot**: `CONFIG_EFI` and `CONFIG_EFI_STUB` in kernel/m4pro-nixos.config, then `boot.loader.systemd-boot.enable = true` with `boot.loader.efi.canTouchEfiVariables = false` in nixos/disk.nix, replacing the extlinux entry. | Not started (`CONFIG_EFI` is off) |
-| 6 | **Name in the startup picker**: rename the stub volume in macOS (`diskutil rename macostest NixOS`) so the picker shows NixOS next to Macintosh HD. | Optional |
+| 1 | **m1n1 stage 1**, release build with chainloading (`just m1n1`), installed on `macostest` from 1TR with `kmutil` (`just m1n1-serve`) | Done: padded to 0x3f4000, chainloads stage 2 on every power-on |
+| 2 | **Chainloading on M4** | Done: m1n1 patch 0008 moves iBoot's boot blobs; Linux keeps the SSD afterwards (pmp.md) |
+| 3 | **Stage 2 in the NixOS system**: `boot.m1n1.stage2` in nixos/disk.nix, installed by nixos/m1n1-boot.nix | Done |
+| 4 | **U-Boot for the M4 Pro**: `pkgs/u-boot.nix` (aurora-silicon `aurora-wip`, `apple_m1_defconfig`) with u-boot/patches | Done for NVMe and serial; the internal keyboard does not work in U-Boot yet (MTP helper: "DART bypass unavailable") |
+| 5 | **Boot menu**: extlinux (`generic-extlinux-compatible`), without the generation's device tree so Linux gets the one m1n1 filled in | Done; systemd-boot through U-Boot's EFI is not needed |
+| 6 | **Name in the startup picker**: `diskutil rename macostest NixOS` in macOS | Optional |
 
-Steps 1 and 2 decide whether the rest can work, so they come first.
+## Findings: U-Boot (2026-11-13)
+
+Tested from the host before anything was written to the SSD: `tools/tether-boot.py -r` runs a stage 2 image exactly as stage 1 chainloads it, and U-Boot's prompt is reachable over the dockchannel (input must stay under 64 bytes a line; U-Boot's watchdog resets the Mac 60 s after it stops servicing it).
+
+- **ANS arrives quiesced.** Our m1n1 stages hand ANS over quiesced (m1n1 patch 0005), with the controller disabled but programmed. aurora's U-Boot took that for a live session to adopt and waited forever for CSTS.RDY. u-boot/patches/0001 runs the INIT handshake whenever the controller is disabled and quiesces ANS again at hand-off, which Linux (kernel patch 0021) wakes as it does after m1n1.
+- **The device tree needs names U-Boot looks up**: `reg-names = "data"` on the dockchannel UART and the NVMMU window as a third NVMe reg (`nvme`, `ans`, `nvmmu`), plus an empty `/reserved-memory` node for its fix-ups (kernel patches 0022, 0023).
+- **M4 cores lose their registers on WFI and WFIT.** On M1–M3 m1n1 sets `CYC_OVRD` so WFI keeps state; on M4 iBoot locks it. m1n1's kboot therefore appends `idle=nop arm64.nowfxt` to the kernel command line, but U-Boot replaces the command line with the extlinux `APPEND`, and every secondary CPU then crashed on its first idle (pc 0, all registers zero). Both parameters are now in `boot.kernelParams` (nixos/common.nix). See Yureka Lilian's "The forgetful CPU" and the upstream erratum thread "arm64: errata: Handle Apple WFI State Loss".
+- **U-Boot points `/chosen/stdout-path` at the framebuffer** when it has a keyboard driver and `stdout` includes vidconsole, which moves Linux's `earlycon` off the dockchannel. Set `stdout serial` at the prompt to see early kernel output on the host.
+
+## Tethered work with U-Boot as stage 2
+
+U-Boot does not run m1n1's USB proxy, so `just restart` and `just dev-boot` need the debug m1n1 back:
+
+```
+just stage2-proxy   # reboot, stop U-Boot over debug USB, copy m1n1/dev.bin over m1n1/boot.bin
+just restart        # now reaches the proxy as before
+```
+
+The next `just flash-system` (or `nixos-rebuild boot`) writes the U-Boot stage 2 back. If U-Boot itself ever fails to start, `just stage2-serve` puts the debug m1n1 on the ESP from 1TR recoveryOS.
 
 ## Findings (2026-11-13)
 
@@ -51,4 +69,4 @@ Recorded from iBoot's own serial output, which debug USB carries when the port i
 ## Choosing an OS
 
 - **macOS or NixOS:** the Apple startup picker (hold the power button at boot) lists every volume with a boot object, so both appear. Startup Disk in macOS, or in the picker, sets the default.
-- **Which NixOS generation:** systemd-boot's menu, shown by U-Boot, the same as on any other NixOS machine. Older generations stay on the ESP until garbage collected.
+- **Which NixOS generation:** U-Boot's extlinux menu, the same `extlinux.conf` as on other NixOS ARM boards. It boots the default after 5 s; until U-Boot reads the internal keyboard, another entry can only be picked over the debug-USB console. Generations built before 2026-11-13 lack `idle=nop arm64.nowfxt` and crash when booted through U-Boot.
