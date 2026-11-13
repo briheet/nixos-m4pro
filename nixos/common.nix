@@ -28,8 +28,6 @@
     "console=tty0"
     "console=ttyDC0"
     "cpuidle.off=1"
-    "clk_ignore_unused"
-    "pd_ignore_unused"
     # M4 cores lose their registers on WFI and WFIT (iBoot locks CYC_OVRD,
     # which on M1-M3 keeps WFI retentive). Kernel patch 0024 saves them
     # around the idle WFI, so cores idle instead of spinning; timed waits
@@ -38,13 +36,27 @@
     # extlinux APPEND, so this one must be ours.
     "arm64.nowfxt"
   ];
-  systemd.services."serial-getty@ttyDC0".enable = true;
 
-  # A bring-up system: log in as root on both consoles without a password.
-  services.getty.autologinUser = "root";
-  # A shell in the initrd if stage 1 fails (root has no password here).
-  boot.initrd.systemd.emergencyAccess = true;
-  users.users.root.initialHashedPassword = "";
+  # Logins. The screen asks for a password. Root is locked, but logs in by
+  # itself on the debug-USB console (ttyDC0): reaching it takes the cable to
+  # the host, and tools/m4sh drives the machine through it.
+  users.users.briheet = {
+    isNormalUser = true;
+    extraGroups = [ "wheel" "video" "input" ];
+    # No password in this (public) repo: `just set-password briheet` sets
+    # one from the host, sending only its hash.
+  };
+  users.users.root.hashedPassword = "!";
+  systemd.services."serial-getty@ttyDC0" = {
+    # A drop-in on systemd's serial-getty@ template, which keeps its TTY
+    # settings; only the agetty line changes (NixOS's, plus --autologin).
+    overrideStrategy = "asDropin";
+    wantedBy = [ "getty.target" ];
+    serviceConfig.ExecStart = [
+      ""
+      "${pkgs.util-linux}/bin/agetty --login-program ${config.services.getty.loginProgram} --autologin root --noclear --keep-baud %I 115200,38400,9600 $TERM"
+    ];
+  };
 
   # No network device yet (Wi-Fi needs PCIe), and the kernel has no
   # netfilter. Turn the firewall back on with the network and nftables.

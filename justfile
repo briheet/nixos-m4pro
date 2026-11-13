@@ -145,6 +145,14 @@ flash-format:
 flash-system:
     tools/m4sh "m4pro-install system" 900
 
+# Set USER's password on the installed system from the host (run it yourself:
+# it prompts). Only the SHA-512 crypt hash goes to the Mac, never the password.
+set-password user:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    hash=$(nix shell nixpkgs#mkpasswd -c mkpasswd -m sha-512)
+    tools/m4sh "usermod -p '$hash' {{user}} && echo password set for {{user}}" 20
+
 # A first install: partition, format and install.
 flash: flash-partition flash-format flash-system
 
@@ -157,6 +165,8 @@ stage2-proxy:
     set -euo pipefail
     pkill -f 'tools/tether-boot.py|tools/m4console' || true
     sudo -n {{vdm}} reboot | tail -n 1
+    # The old debug port lingers for a moment after the reboot request.
+    for i in $(seq 20); do [ -e {{port}} ] || break; sleep 0.5; done
     rm -f build/console.log
     for i in $(seq 60); do
       sudo -n {{vdm}} debugusb >/dev/null 2>&1 || true

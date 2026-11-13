@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# Boot an installed generation through the U-Boot stage 2 with any kernel
+# command line, from the host: reboot the Mac, stop U-Boot over debug USB,
+# load the generation's kernel and initrd from the ESP and booti them with
+# the device tree m1n1 prepared. Nothing on the Mac changes.
+#
+#   tools/uboot-boot [TOPLEVEL] [-- extra or replacement arguments]
+#   tools/uboot-boot -- -clk_ignore_unused -pd_ignore_unused
+#
+# TOPLEVEL defaults to build/out/disk-toplevel (it must be installed). After
+# "--", "-ARG" drops a word from the generation's command line and any other
+# word is appended. The console stays on build/console.log (tools/m4sh works
+# once the shell is up).
+#
+# U-Boot drops input lines that outrun its 64-byte dockchannel FIFO, so the
+# command line goes over in short setenv pieces.
+set -euo pipefail
+cd "$(dirname "$0")/.." || exit 1
+VDM=${MACVDMTOOL:-$HOME/code/macvdmtool/macvdmtool}
+PORT=/dev/cu.kis-100000-ch-0
+
+top=$(cat build/out/disk-toplevel)
+if [ $# -gt 0 ] && [ "$1" != "--" ]; then top=$1; shift; fi
+[ "${1:-}" = "--" ] && shift
+edits=("$@")
+
+# The ESP names the files after their store paths (extlinux-conf-builder).
+read -r kernel initrd params < <(docker exec nixos-m4pro-builder sh -c \
+  "echo \$(basename \$(dirname \$(readlink -f $top/kernel)))-Image \
+        \$(basename \$(dirname \$(readlink -f $top/initrd)))-initrd \
+        \$(cat $top/kernel-params)")
+words=("init=$top/init" $params)
+for e in "${edits[@]}"; do
+  if [[ $e == -* ]]; then
+    kept=(); for w in "${words[@]}"; do [ "$w" = "${e#-}" ] || kept+=("$w"); done; words=("${kept[@]}")
+  else
+    words+=("$e")
+  fi
+done
+cmdline="${words[*]}"
+echo "uboot-boot: $kernel"
+echo "uboot-boot: $cmdline"
+
+pkill -f 'tools/tether-boot.py|tools/m4console' || true
+sudo -n "$VDM" reboot | tail -n 1
+# The old debug port lingers for a moment after the reboot request.
+for i in $(seq 20); do [ -e "$PORT" ] || break; sleep 0.5; done
+rm -f build/console.log
+for i in $(seq 80); do
+  sudo -n "$VDM" debugusb >/dev/null 2>&1 || true
+  [ -e "$PORT" ] && break; sleep 0.5
+done
+nohup .venv-m1n1/bin/python tools/m4console --pad64 "$PORT" > build/m4console.out 2>&1 &
+for i in $(seq 300); do
+  grep -q "=> " build/console.log 2>/dev/null && break
+  printf ' \n' > build/console.in; sleep 0.1
+done
+grep -q "=> " build/console.log || { echo "uboot-boot: no U-Boot prompt" >&2; exit 1; }
+sleep 1; printf '\n' > build/console.in; sleep 1
+
+send() { printf '%s\n' "$1" > build/console.in; sleep 1.2; }
+# Pieces of at most 40 characters; a piece that ends inside a word is glued
+# to the next one without a space.
+vars=(); rest=$cmdline; n=0
+while [ -n "$rest" ]; do
+  piece=${rest:0:40}; rest=${rest:40}
+  send "setenv p$n '$piece'"; vars+=("\${p$n}"); n=$((n + 1))
+done
+send "setenv bootargs $(IFS=; echo "${vars[*]}")"
+send "load nvme 0:4 \${kernel_addr_r} nixos/$kernel"
+send "load nvme 0:4 \${ramdisk_addr_r} nixos/$initrd"
+send 'setenv rd_size ${filesize}'
+send 'setenv stdout serial'
+send 'setenv stderr serial'
+send 'booti ${kernel_addr_r} ${ramdisk_addr_r}:${rd_size} ${fdtcontroladdr}'
+for i in $(seq 30); do grep -q "Starting kernel" build/console.log && break; sleep 1; done
+grep -q "Starting kernel" build/console.log || { echo "uboot-boot: kernel did not start" >&2; tail -n 8 build/console.log >&2; exit 1; }
+echo "uboot-boot: kernel started; console on build/console.log"
