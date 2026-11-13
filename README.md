@@ -89,4 +89,4 @@ Every boot is recorded under `build/runs/<time>/` (console log with timestamps, 
 
 ## Known gaps
 
-No network, no trackpad (it needs its firmware from macOS and its analog front end powered through an SMC key), no suspend or CPU frequency scaling. The internal keyboard does not work in U-Boot's menu yet. The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).
+No network, no suspend or CPU frequency scaling, no trackpad haptics. The trackpad needs its firmware added to the Nix store once (docs/boot_linux/keyboard.md). The internal keyboard does not work in U-Boot's menu yet. The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).

@@ -76,8 +76,8 @@ m1n1_vuart := "/dev/cu.usbmodem*3"
 
 # Restart the M4 Pro into m1n1 and wait for m1n1's USB device.
 restart:
+    tools/m4reboot
     pkill -f 'tools/tether-boot.py|tools/m4console|run_guest.py' || true
-    sudo -n {{vdm}} reboot | tail -n 1
     for i in $(seq 60); do ls {{m1n1_usb}} >/dev/null 2>&1 && break; sleep 1; done
     ls {{m1n1_usb}} {{m1n1_vuart}}
     for i in 1 2 3 4 5; do \
@@ -163,10 +163,8 @@ flash: flash-partition flash-format flash-system
 stage2-proxy:
     #!/usr/bin/env bash
     set -euo pipefail
+    tools/m4reboot
     pkill -f 'tools/tether-boot.py|tools/m4console' || true
-    sudo -n {{vdm}} reboot | tail -n 1
-    # The old debug port lingers for a moment after the reboot request.
-    for i in $(seq 20); do [ -e {{port}} ] || break; sleep 0.5; done
     rm -f build/console.log
     for i in $(seq 60); do
       sudo -n {{vdm}} debugusb >/dev/null 2>&1 || true

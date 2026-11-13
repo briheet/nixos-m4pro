@@ -41,10 +41,8 @@ cmdline="${words[*]}"
 echo "uboot-boot: $kernel"
 echo "uboot-boot: $cmdline"
 
+tools/m4reboot
 pkill -f 'tools/tether-boot.py|tools/m4console' || true
-sudo -n "$VDM" reboot | tail -n 1
-# The old debug port lingers for a moment after the reboot request.
-for i in $(seq 20); do [ -e "$PORT" ] || break; sleep 0.5; done
 rm -f build/console.log
 for i in $(seq 80); do
   sudo -n "$VDM" debugusb >/dev/null 2>&1 || true

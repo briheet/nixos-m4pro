@@ -26,10 +26,10 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 | 8 | NVMe | `ans` (`iop,ascwrap-v6`, with an `ans-pcie` child), `sart,coastguard` | WIP | Done: ANS through ADT reg 9, mainline M4 driver change |
 | 9 | Disk layout | 500 GB `APPLE SSD AP0512Z`, APFS only | — | Done: p4 `nixos-boot`, p5 `nixos` after a macOS resize; `just flash` |
 | 10 | Boot chain from disk | m1n1 stage 1 → stage 2 → U-Boot → extlinux | Installer: no | Done: boots from power-on without the host; keyboard in U-Boot left (docs/boot_linux/boot-chain.md) |
-| 11 | Firmware from macOS | Wi-Fi, Bluetooth, and other blobs | — | Not started |
+| 11 | Firmware from macOS | Wi-Fi, Bluetooth, and other blobs | — | Trackpad firmware pinned by hash (pkgs/j614s-firmware.nix); Wi-Fi/Bluetooth not yet |
 | 12 | NixOS module for `J614s` | — | — | nixos/common.nix, disk.nix, ram.nix |
 | **Phase 3: a usable laptop** | | | | |
-| 13 | Keyboard and trackpad | `mtp` coprocessor, `dockchannel-mtp`, `hid-transport,mux` | TBA | Keyboard works; trackpad needs the SMC reset GPIO |
+| 13 | Keyboard and trackpad | `mtp` coprocessor, `dockchannel-mtp`, `hid-transport,mux` | TBA | Done: keyboard and multitouch trackpad (docs/boot_linux/keyboard.md); no Force Touch haptics yet |
 | 14 | Internal display | `dcp`, `disp0,t604x`, Parade `DP855` TCON on `spi4` | TBA | Not started |
 | 15 | Battery, charger, power button, lid | `smc` coprocessor, `smc-gpio0` | TBA | Done: SMC (macsmc) with RTC, battery/AC, power button and lid, clean reboot/power-off; PMU boot counters cleared on each boot (kernel patch 0025) |
 | 16 | Keyboard backlight | `fpwm0` | TBA | Not started |

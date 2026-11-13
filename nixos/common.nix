@@ -37,6 +37,15 @@
     "arm64.nowfxt"
   ];
 
+  # Apple firmware, pinned by hash (pkgs/j614s-firmware.nix). The kernel
+  # loads it uncompressed (no FW_LOADER_COMPRESS).
+  hardware.firmware = [ (pkgs.callPackage ../pkgs/j614s-firmware.nix { }) ];
+  hardware.firmwareCompression = "none";
+  nixpkgs.config.allowUnfreePredicate = pkg: lib.getName pkg == "tpmtfw-j614s.bin";
+  # The trackpad asks for its firmware as soon as the MTP announces it,
+  # while the initrd still runs.
+  boot.initrd.extraFirmwarePaths = [ "apple/tpmtfw-j614s.bin" ];
+
   # Logins. The screen asks for a password. Root is locked, but logs in by
   # itself on the debug-USB console (ttyDC0): reaching it takes the cable to
   # the host, and tools/m4sh drives the machine through it.

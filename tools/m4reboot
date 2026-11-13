@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Restart the M4 Pro. When Linux answers on the debug console, reboot it
+# cleanly (systemctl reboot: the SMC restarts the machine and the PMU's boot
+# state says the OS shut down). Otherwise a hard reset through the USB-C
+# port controller (macvdmtool reboot). iBoot treats a hard reset of a
+# running OS as a crash, and after one or a few it stops booting the volume
+# and shows the Recovery/Startup Disk screen.
+#
+# Returns once the old debug port has gone away.
+set -euo pipefail
+cd "$(dirname "$0")/.." || exit 1
+VDM=${MACVDMTOOL:-$HOME/code/macvdmtool/macvdmtool}
+PORT=/dev/cu.kis-100000-ch-0
+
+if [ -e "$PORT" ] && pgrep -f tools/m4console >/dev/null && tools/m4sh "true" 3 >/dev/null 2>&1; then
+  echo "m4reboot: clean reboot through Linux"
+  printf '(sleep 1; systemctl reboot) &\n' > build/console.in
+else
+  echo "m4reboot: hard reset (no Linux shell answering)"
+  sudo -n "$VDM" reboot | tail -n 1
+fi
+for i in $(seq 60); do [ -e "$PORT" ] || exit 0; sleep 0.5; done
+echo "m4reboot: the debug port did not go away" >&2
+exit 1
