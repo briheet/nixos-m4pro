@@ -47,6 +47,12 @@ in
 
     boot.loader.grub.enable = false;
 
+    # Only critical kernel messages on the consoles. brcmfmac logs an error
+    # on every Wi-Fi connect (the firmware refuses join_pref, -52) and at
+    # start-up (P2P), which landed on the greeter. All of it stays in dmesg
+    # and the journal.
+    boot.consoleLogLevel = lib.mkDefault 3;
+
     # Consoles: the internal screen and the dockchannel UART the host sees
     # over debug USB. The last console= is /dev/console.
     boot.kernelParams = [
