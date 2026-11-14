@@ -47,7 +47,7 @@ in
   # the Asahi installer lays out boot.bin. The device tree is this
   # generation's kernel's, so stage 2 is rewritten with each generation.
   boot.m1n1.stage2 = pkgs.runCommand "m1n1-stage2.bin" { } ''
-    cat ${m1n1 { }}/lib/m1n1/m1n1.bin \
+    cat ${m1n1 { inherit (config.hardware.j614s.display) showNotch; }}/lib/m1n1/m1n1.bin \
       ${config.boot.kernelPackages.kernel}/dtbs/apple/t6040-j614s.dtb \
       ${pkgs.callPackage ../pkgs/u-boot.nix { src = config.hardware.j614s.sources.uBoot; }}/u-boot-nodtb.bin.gz > $out
   '';

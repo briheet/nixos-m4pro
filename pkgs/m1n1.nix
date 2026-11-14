@@ -7,7 +7,9 @@
 #   release = false  the debug build (chainloading too), as installed on
 #                    macostest during bring-up
 #                    (early UART at the T6040 address, proxy on debug USB).
-{ lib, m1n1, gcc14Stdenv, rustPlatform, imagemagick, nixos-icons, src, release ? true }:
+#   showNotch = true the OS gets the whole panel, notch area included
+#                    (m1n1/patches/0009); otherwise the 16:10 part below it.
+{ lib, m1n1, gcc14Stdenv, rustPlatform, imagemagick, nixos-icons, src, release ? true, showNotch ? false }:
 
 # Built like the m1n1 that first ran on this Mac (Debian trixie, gcc 14, no
 # extra flags). nixpkgs' cc wrapper adds hardening flags by default
@@ -54,7 +56,7 @@ in
 
   makeFlags =
     if release then
-      old.makeFlags
+      old.makeFlags ++ lib.optional showNotch "EXTRA_CFLAGS=-DM1N1_SHOW_NOTCH"
     else
       [ "ARCH=" "CHAINLOADING=1" "EXTRA_CFLAGS=-DTARGET=0x6040" ];
 

@@ -19,6 +19,16 @@ in
     '';
   };
 
+  options.hardware.j614s.display.showNotch = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+    description = ''
+      Give the OS the whole 3024x1964 panel, the strip beside the notch
+      included, instead of the 3024x1890 below it (m1n1 stage 2 sets the
+      framebuffer). The notch then covers the middle of the top 74 pixels.
+    '';
+  };
+
   options.hardware.j614s.sources = lib.mkOption {
     type = lib.types.submodule {
       options = lib.genAttrs [ "m1n1" "uBoot" "linux" ] (name: lib.mkOption {

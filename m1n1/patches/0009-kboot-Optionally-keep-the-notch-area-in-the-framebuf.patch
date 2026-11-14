@@ -1,0 +1,33 @@
+From 1dbf9c872c5b462edee9e757b2cb348b2e4af472 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Sat, 14 Nov 2026 14:52:17 +0530
+Subject: [PATCH] kboot: Optionally keep the notch area in the framebuffer
+
+Built with -DM1N1_SHOW_NOTCH, m1n1 passes the whole panel to the OS
+instead of the 16:10 part below the notch (3024x1964 rather than
+3024x1890 on the 14-inch MacBook Pro).
+---
+ src/kboot.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/kboot.c b/src/kboot.c
+index 88792300..43b5d36b 100644
+--- a/src/kboot.c
++++ b/src/kboot.c
+@@ -71,6 +71,13 @@ void get_notchless_fb(u64 *fb_base, u64 *fb_height)
+     *fb_base = cur_boot_args.video.base;
+     *fb_height = cur_boot_args.video.height;
+ 
++#ifdef M1N1_SHOW_NOTCH
++    /* The whole panel, notch area included (nixos-m4pro showNotch). */
++    printf("display: Showing the notch area, %lux%lu\n", cur_boot_args.video.width,
++           cur_boot_args.video.height);
++    return;
++#endif
++
+     int node = adt_path_offset(adt, "/product");
+ 
+     if (node < 0) {
+-- 
+2.56.0
+
