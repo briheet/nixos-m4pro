@@ -32,6 +32,10 @@ buildUBoot rec {
     # autoboot menu, every key with quiet boot off). Show the menu instead.
     CONFIG_VIDEO_QUIET_BOOT=n
     CONFIG_FAT_WRITE=y
+    # No stored environment: U-Boot always starts from its built-in one
+    # (u-boot/patches/0003), and nothing looks for uboot.env on the ESP.
+    CONFIG_ENV_IS_IN_FAT=n
+    CONFIG_ENV_IS_NOWHERE=y
   '';
   postBuild = ''
     gzip -n u-boot-nodtb.bin

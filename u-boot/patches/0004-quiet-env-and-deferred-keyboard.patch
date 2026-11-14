@@ -1,0 +1,45 @@
+From: nixos-m4pro
+Subject: [PATCH] Quiet start-up: no line for a missing environment or a deferred keyboard
+
+With the environment nowhere (pkgs/u-boot.nix) there is nothing to load,
+and the J614s MTP keyboard fails its first probe with -ENODEV only because
+board_late_init starts it later. Neither needs a line on the screen.
+---
+--- a/env/env.c	2026-11-14 14:43:33.304120938 +0530
++++ b/env/env.c	2026-11-14 14:43:46.244608832 +0530
+@@ -189,7 +189,9 @@
+ 		if (!env_has_inited(drv->location))
+ 			continue;
+ 
+-		printf("Loading Environment from %s... ", drv->name);
++		/* Nothing to report when there is no stored environment. */
++		if (drv->location != ENVL_NOWHERE)
++			printf("Loading Environment from %s... ", drv->name);
+ 		/*
+ 		 * In error case, the error message must be printed during
+ 		 * drv->load() in some underlying API, and it must be exactly
+@@ -197,7 +199,8 @@
+ 		 */
+ 		ret = drv->load();
+ 		if (!ret) {
+-			printf("OK\n");
++			if (drv->location != ENVL_NOWHERE)
++				printf("OK\n");
+ 			gd->env_load_prio = prio;
+ 
+ 			return 0;
+--- a/common/stdio.c	2026-11-14 14:43:33.306690773 +0530
++++ b/common/stdio.c	2026-11-14 14:43:46.244741040 +0530
+@@ -316,7 +316,11 @@
+ 		for (ret = uclass_first_device_check(UCLASS_KEYBOARD, &dev);
+ 				dev;
+ 				ret = uclass_next_device_check(&dev)) {
+-			if (ret)
++			/*
++			 * -ENODEV: not ready yet. The J614s MTP keyboard is
++			 * started later, by board_late_init ("mtpkbd start").
++			 */
++			if (ret && ret != -ENODEV)
+ 				printf("%s: Failed to probe keyboard '%s' (ret=%d)\n",
+ 				       __func__, dev->name, ret);
+ 		}
