@@ -97,7 +97,10 @@
 
             # Stage 1 for the macostest volume: the release m1n1 with its
             # config lines appended, as the Asahi installer writes them.
-            m1n1-stage1 = stage1 self.packages.aarch64-linux.m1n1;
+            m1n1-stage1 = stage1 (pkgs.callPackage ./pkgs/m1n1.nix {
+              src = inputs.m1n1;
+              nixosLogo = false;
+            });
             # The same with the debug m1n1, which prints its log on the
             # screen: for finding where a chainload stops.
             m1n1-stage1-dev = stage1 self.packages.aarch64-linux.m1n1-dev;

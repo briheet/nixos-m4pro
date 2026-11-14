@@ -9,7 +9,8 @@
 #                    (early UART at the T6040 address, proxy on debug USB).
 #   showNotch = true the OS gets the whole panel, notch area included
 #                    (m1n1/patches/0009); otherwise the 16:10 part below it.
-{ lib, m1n1, gcc14Stdenv, rustPlatform, imagemagick, nixos-icons, src, release ? true, showNotch ? false }:
+#   nixosLogo        the NixOS snowflake instead of m1n1's Asahi logo.
+{ lib, m1n1, gcc14Stdenv, rustPlatform, imagemagick, nixos-icons, src, release ? true, showNotch ? false, nixosLogo ? true }:
 
 # Built like the m1n1 that first ran on this Mac (Debian trixie, gcc 14, no
 # extra flags). nixpkgs' cc wrapper adds hardening flags by default
@@ -63,8 +64,8 @@ in
   # The NixOS snowflake instead of the Asahi logo: the logos m1n1 compiles
   # in (raw RGBA, 48/128/256 px squares on black), regenerated from
   # nixos-icons. Same sizes, so the image size does not change.
-  nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ imagemagick ];
-  postPatch = (old.postPatch or "") + ''
+  nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ lib.optional nixosLogo imagemagick;
+  postPatch = (old.postPatch or "") + lib.optionalString nixosLogo ''
     for s in 48 128 256; do
       magick ${nixos-icons}/share/icons/hicolor/256x256/apps/nix-snowflake.png \
         -background black -flatten -resize ''${s}x''${s} -gravity center -extent ''${s}x''${s} \
