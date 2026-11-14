@@ -1,0 +1,45 @@
+From: briheet-invideo <dev@localhost>
+Subject: [PATCH] soc: apple: rtkit-helper: Stop an adopted MTP at shutdown
+
+An MTP session adopted from U-Boot is never quiesced, so it runs through
+a reboot with its DART in bypass, and iBoot then panicked loading the
+boot object (3bdace14b1a9a68:2081) on 3 of 5 reboots on J614s. Quiesce
+an adopted session and stop its CPU at shutdown. (Asahi-era patch 0033,
+rebased on aurora.)
+---
+--- a/drivers/soc/apple/rtkit-helper.c
++++ b/drivers/soc/apple/rtkit-helper.c
+@@ -571,6 +571,25 @@
+ 	.poweroff = pm_sleep_ptr(apple_rtkit_helper_freeze),
+ };
+ 
++/*
++ * A session adopted from U-Boot is left running at remove, but not across
++ * a reboot: iBoot then finds the MTP still running with its DART in bypass
++ * and on some boots panics loading the boot object (3bdace14b1a9a68:2081;
++ * 3 of 5 reboots on J614s, none when Linux had started the MTP itself).
++ * Put it to sleep and stop its CPU, as a session Linux started is not.
++ */
++static void apple_rtkit_helper_shutdown(struct platform_device *pdev)
++{
++	struct apple_rtkit_helper *helper = platform_get_drvdata(pdev);
++
++	if (!helper || !helper->adopted || IS_ERR_OR_NULL(helper->rtk))
++		return;
++
++	if (apple_rtkit_is_running(helper->rtk) && apple_rtkit_quiesce(helper->rtk))
++		dev_warn(helper->dev, "MTP did not quiesce at shutdown\n");
++	writel_relaxed(0, helper->asc_base + APPLE_ASC_CPU_CONTROL);
++}
++
+ static const struct of_device_id apple_rtkit_helper_of_match[] = {
+ 	{ .compatible = "apple,rtk-helper-asc4" },
+ 	/* J613/J615 25G83 DTs omit the generic fallback (see t8122-j613-25g83.dts). */
+@@ -589,6 +608,7 @@
+ 	},
+ 	.probe = apple_rtkit_helper_probe,
+ 	.remove = apple_rtkit_helper_remove,
++	.shutdown = apple_rtkit_helper_shutdown,
+ };
+ module_platform_driver(apple_rtkit_helper_driver);
+ 

@@ -1,12 +1,13 @@
 # The J614s (MacBook Pro 14", M4 Pro) kernel, built by Nix.
 #
-# Source: the linux flake input (AsahiLinux/linux branch "asahi", locked in
-# flake.lock; `nix flake update linux` follows upstream), plus
-# kernel/patches (the t604x device trees, the dockchannel console, the
-# J614s PMGR list, MTP/keyboard nodes, and the PMGR bring-up changes).
-# Config: kernel/m4pro-nixos.full.config, generated from allnoconfig plus
-# kernel/m4pro-min.config and kernel/m4pro-nixos.config. Everything is
-# built in; module support is enabled for NixOS's module tree.
+# Source: the linux flake input (aurora-silicon/linux branch
+# "integration/aurora", locked in flake.lock; `nix flake update linux`
+# follows it), plus kernel/patches (only what aurora lacks).
+# Config: kernel/m4pro-nixos.full.config, generated from arm64 defconfig,
+# aurora's arch/arm64/configs/asahi.config, then kernel/m4pro-min.config
+# and kernel/m4pro-nixos.config (ours win: storage, keyboard, console and
+# Wi-Fi built in, so the initrd needs no modules). The Asahi-era patches
+# and config are in kernel/asahi/.
 { lib, linuxManualConfig, src, ... }:
 
 let

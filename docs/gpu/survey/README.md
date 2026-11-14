@@ -329,3 +329,15 @@ Costs and limits:
    KWin session composited onto simpledrm (C.2).
 7. **Later:** offer the 27.2 variant upstream to aurora (it is the same
    interface family), then DCP as its own project.
+
+## Corrections (2026-11-14, boot-path and fwid reads of aurora's tree)
+
+- T6040 runs aurora's **g17** path (`ProbeConfig::G17(&hw::t6040::CONFIG)`,
+  variant V25G83), not `g16/` (that is the base M4, T8132).
+- The interface words differ in three of four u16s
+  (`0x0c8aa322039604c0` vs `0x0c8b6339839804c0`): probably a hash, so
+  "one step apart" is unproven.
+- Aurora already builds the 0xc8 merged root for T6040 (+0xb8 power
+  state, +0xc0 config); item K4 above is wrong.
+- 27.2's opening device-control opcode (0x15) and scheduler release (0x13)
+  match aurora's 27.0 (M5) numbering, not 25G83's (0x16, 0x14).

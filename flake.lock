@@ -3,16 +3,16 @@
     "linux": {
       "flake": false,
       "locked": {
-        "lastModified": 1793885142,
-        "narHash": "sha256-q5kIQl0w/yn4dqM5rPqq2pFenxgi53XjCBa3MUlyQKI=",
-        "owner": "AsahiLinux",
+        "lastModified": 1794668971,
+        "narHash": "sha256-aPrEnlTwV+CXvhEzMRq6XExGt/wV0E+9d0tIOxDKiZ8=",
+        "owner": "aurora-silicon",
         "repo": "linux",
-        "rev": "6ba0637d1ed9a2e3639dd3fc9eca6cd0483a6434",
+        "rev": "0a02a044fa872a55d8c01f0b706469b65db9293d",
         "type": "github"
       },
       "original": {
-        "owner": "AsahiLinux",
-        "ref": "asahi",
+        "owner": "aurora-silicon",
+        "ref": "integration/aurora",
         "repo": "linux",
         "type": "github"
       }

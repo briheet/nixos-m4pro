@@ -16,7 +16,7 @@
       flake = false;
     };
     linux = {
-      url = "github:AsahiLinux/linux/asahi";
+      url = "github:aurora-silicon/linux/integration/aurora";
       flake = false;
     };
   };
