@@ -11,7 +11,8 @@
 # because m1n1's own AGX tracer only knows firmware up to macOS 14.7.
 #
 # The UAT walker is used read-only: never UAT.init(), which rewrites tables.
-# More snapshots from the hypervisor shell: agx_raw.snapshot("name").
+# More snapshots: `echo LABEL > <trace dir>/snap-now` on the host; the next
+# GPU message (checked every 64) takes snapshot "trigger-LABEL".
 import datetime
 import json
 import os
@@ -73,6 +74,7 @@ class RawAGXTracer(ASCTracer):
         self.t0 = time.time()
         self.snapshots = 0
         self.snapped_init = False
+        self.trigger = os.path.join(out, "snap-now")
         self.sgx = hv.u.adt["/arm-io/sgx"]
         self.uat = UAT(hv.iface, hv.u, hv)
         self.regions = {}
@@ -101,6 +103,12 @@ class RawAGXTracer(ASCTracer):
             self.snapshot("first-app-tx-ep%#x" % int(r1.EP))
         elif self.nmsg in self.SNAP_AT:
             self.snapshot("after-%d-msgs" % self.nmsg)
+        elif self.nmsg % 64 == 0 and os.path.exists(self.trigger):
+            # Snapshot on request from the host: `echo LABEL > OUT/snap-now`.
+            with open(self.trigger) as f:
+                label = f.read().strip() or "now"
+            os.remove(self.trigger)
+            self.snapshot("trigger-" + label.replace("/", "_").replace(" ", "_"))
         return super().handle_msg(direction, r0, r1)
 
     def raw_tables(self):
