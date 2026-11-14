@@ -13,6 +13,8 @@ let usage () =
   prerr_endline "       nixos-m4pro agx init TRACE SNAP          decode InitData from a trace snapshot";
   prerr_endline "       nixos-m4pro agx dump TRACE SNAP VA LEN   hexdump GPU memory (* = resolvable pointer)";
   prerr_endline "       nixos-m4pro agx decode TRACE SNAP STRUCT VA  decode a structure (27.2 layouts)";
+  prerr_endline "       nixos-m4pro agx ptrs TRACE SNAP VA LEN   resolvable pointers at any 2-byte offset";
+  prerr_endline "       nixos-m4pro agx queue TRACE SNAP VA N    a command queue and its first N commands";
   prerr_endline "       nixos-m4pro agx graph TRACE SNAP VA|init DEPTH  pointer graph from an address";
   prerr_endline "                               DEV defaults to $M1N1DEVICE, then the debug USB channel";
   exit 2
@@ -70,10 +72,21 @@ let () =
       let module A = Nixos_m4pro.Agx in
       ignore A.Regionb.queue_channels;
       ignore A.Initdata.levels;
+      ignore A.Cmdqueue.show;
       let s = A.Snapshot.load (Filename.concat trace snap) in
       (match A.Schema.decode s ~version:[ 27; 2 ] name (A.Snapshot.int_of_hex va) with
       | Some v -> print_endline (A.Schema.to_string v)
       | None -> print_endline "not in the snapshot")
+  | [ _; "agx"; "ptrs"; trace; snap; va; len ] ->
+      let module A = Nixos_m4pro.Agx in
+      let s = A.Snapshot.load (Filename.concat trace snap) in
+      List.iter
+        (fun (o, t) -> Printf.printf "+%#06x -> %s\n" o (A.Explore.hex64 t))
+        (A.Explore.pointers s (A.Snapshot.int_of_hex va) (int_of_string len))
+  | [ _; "agx"; "queue"; trace; snap; va; n ] ->
+      let module A = Nixos_m4pro.Agx in
+      let s = A.Snapshot.load (Filename.concat trace snap) in
+      print_string (A.Cmdqueue.show s (A.Snapshot.int_of_hex va) (int_of_string n))
   | [ _; "agx"; "dump"; trace; snap; va; len ] ->
       let module A = Nixos_m4pro.Agx in
       let s = A.Snapshot.load (Filename.concat trace snap) in

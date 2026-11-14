@@ -68,3 +68,20 @@ let print_graph ?(out = print_string) (nodes, edges) =
         edges)
     nodes;
   out (Buffer.contents b)
+
+(* Resolvable pointers anywhere in [len] bytes at [va], at every [step]-byte
+   offset: firmware structures are packed, and 27.2 puts pointers at 2-byte
+   boundaries inside work commands. Overlapping hits (a pointer found again
+   two bytes later) are dropped. *)
+let pointers ?(step = 2) snap va len =
+  match Snapshot.read snap va len with
+  | None -> []
+  | Some s ->
+      let rec go off last acc =
+        if off + 8 > String.length s then List.rev acc
+        else
+          let v = Int64.to_int (String.get_int64_le s off) in
+          if off >= last && resolvable snap v then go (off + step) (off + 8) ((off, v) :: acc)
+          else go (off + step) last acc
+      in
+      go 0 0 []

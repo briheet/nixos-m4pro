@@ -82,7 +82,16 @@ decoding, `lib/agx/`). Traces stay in `build/agx/traces/`.
   (event, firmware log, trace, stats) follow at 0x1c0 in another shape.
 - Queue ring entries are 0x18 bytes (13.x: 0x30): queue type, command
   queue pointer, a constant 1, a u16 event number (+2 per submission), a
-  constant 5, and the new-queue flag. Next: the command queue they point at.
+  constant 5, and the new-queue flag.
+- Command queues (`lib/agx/cmdqueue.ml`): 0x80 bytes each (13.x ~0xb0),
+  packed 0x80 apart. Queue pointers, ring and job list where 13.x has them;
+  13.x's `gpu_buf` pointer is gone, so the read pointers and `event_id`
+  (-1) move up 8 bytes. The queue-pointer block and job list keep their
+  13.x layouts (done and read pointers equal when the queue is idle).
+- Work commands have new types: a 3D queue's ring alternates type `0xf`
+  (0xc0 bytes, pointers at 2-byte boundaries: +0x10 a per-command kernel
+  buffer, +0x36, +0x4a a GPU context) and type `0x10` (0x40 bytes, no
+  pointers). 13.x used 0 TA, 1 3D, 3 compute, 4 barrier, 6 init-BM.
 
 ## Still to collect
 

@@ -806,10 +806,13 @@ let () =
   check "uat_page_size offset 27.2"
     (List.exists (fun (o, (fl : S.field)) -> fl.name = "uat_page_size" && o = 0x30) (S.layout [ 27; 2 ] "InitData"));
   ignore Nixos_m4pro.Agx.Regionb.queue_channels;
+  ignore Nixos_m4pro.Agx.Cmdqueue.show;
   check "ChannelInfoSet 13.x" (S.size [ 13; 5 ] (S.Struct "ChannelInfoSet") = 0x110);
   check "ChannelState 13.x" (S.size [ 13; 5 ] (S.Struct "ChannelState") = 0x30);
   check "ChannelState 27.2" (S.size [ 27; 2 ] (S.Struct "ChannelState") = 0x30);
   check "RegionB 27.2 queues end at 0x1c0" (S.size [ 27; 2 ] (S.Struct "RegionB") = 0x1c0);
   check "RunCmdQueueMsg 27.2" (S.size [ 27; 2 ] (S.Struct "RunCmdQueueMsg27") = 0x18);
+  check "CommandQueueInfo 27.2" (S.size [ 27; 2 ] (S.Struct "CommandQueueInfo27") = 0x80);
+  check "JobList" (S.size [ 27; 2 ] (S.Struct "JobList") = 0x18);
   check "version gates" (S.present [ 27; 2 ] (S.Since "27") && not (S.present [ 13; 5 ] (S.Since "27")));
   print_endline "ok"
