@@ -10,3 +10,5 @@ result-*
 __pycache__/
 upstream/
 .venv-m1n1/
+# Per-unit raw values (fuses, firmware identity, snapshot addresses): never committed.
+local/
