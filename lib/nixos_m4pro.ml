@@ -13,6 +13,7 @@ module Wdt = Soc.Wdt
 module Aic = Soc.Aic
 module Pmgr = Soc.Pmgr
 module Pmgr_adt = Soc.Pmgr_adt
+module Gpu_adt = Soc.Gpu_adt
 module Adt = Adt
 module Dart = Soc.Dart
 module Pcie = Soc.Pcie
