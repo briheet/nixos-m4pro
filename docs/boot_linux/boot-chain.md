@@ -23,7 +23,7 @@ Only stage 1 needs a trip to recoveryOS; each switch puts the matching one on th
 | 1 | **m1n1 stage 1**, release build with chainloading (`just m1n1`), installed on `macostest` from 1TR with `kmutil` (`just m1n1-serve`) | Done: padded to 0x3f4000, chainloads stage 2 on every power-on |
 | 2 | **Chainloading on M4** | Done: m1n1 patch 0008 moves iBoot's boot blobs; Linux keeps the SSD afterwards (pmp.md) |
 | 3 | **Stage 2 in the NixOS system**: `boot.m1n1.stage2` in nixos/j614s-ssd.nix, installed by nixos/m1n1-boot.nix | Done |
-| 4 | **U-Boot for the M4 Pro**: `pkgs/u-boot.nix` (aurora-silicon `aurora-wip`, `apple_m1_defconfig`) with u-boot/patches | Done for NVMe and serial; the internal keyboard does not work in U-Boot yet (MTP helper: "DART bypass unavailable") |
+| 4 | **U-Boot for the M4 Pro**: `pkgs/u-boot.nix` (aurora-silicon `aurora-wip`, `apple_m1_defconfig`) with u-boot/patches | Done: NVMe, serial and the internal keyboard (U-Boot keyboard below) |
 | 5 | **Boot menu**: extlinux (`generic-extlinux-compatible`), without the generation's device tree so Linux gets the one m1n1 filled in | Done; systemd-boot through U-Boot's EFI is not needed |
 | 6 | **Name in the startup picker**: `diskutil rename macostest NixOS` in macOS | Optional |
 
@@ -35,6 +35,17 @@ Tested from the host before anything was written to the SSD: `tools/tether-boot.
 - **The device tree needs names U-Boot looks up**: `reg-names = "data"` on the dockchannel UART and the NVMMU window as a third NVMe reg (`nvme`, `ans`, `nvmmu`), plus an empty `/reserved-memory` node for its fix-ups (kernel patches 0022, 0023).
 - **M4 cores lose their registers on WFI and WFIT.** On M1–M3 m1n1 sets `CYC_OVRD` so WFI keeps state; on M4 iBoot locks it. m1n1's kboot therefore appends `idle=nop arm64.nowfxt` to the kernel command line, but U-Boot replaces the command line with the extlinux `APPEND`, and every secondary CPU then crashed on its first idle (pc 0, all registers zero). `arm64.nowfxt` is now in `boot.kernelParams` (nixos/j614s.nix); instead of `idle=nop`, kernel patch 0024 saves the registers around the idle WFI. See Yureka Lilian's "The forgetful CPU" and the upstream erratum thread "arm64: errata: Handle Apple WFI State Loss".
 - **U-Boot points `/chosen/stdout-path` at the framebuffer** when it has a keyboard driver and `stdout` includes vidconsole, which moves Linux's `earlycon` off the dockchannel. Set `stdout serial` at the prompt to see early kernel output on the host.
+
+## U-Boot keyboard (2026-11-14)
+
+The MTP firmware on this Mac cannot be restarted once quiesced, so U-Boot starts it for its keyboard and hands it to Linux running, as aurora-silicon does on the J614s.
+
+- **U-Boot** (u-boot/patches/0002): its helper needs the MTP DART to keep the coprocessor in bypass; it took the stream only from a one-cell `iommus`, and our tree has Asahi's five cells ("J614s: MTP DART bypass unavailable (-19)"). It then describes the session on the MTP node for the OS: `apple,rtkit-handoff = "mtp-live-v1"`, the buffers the firmware holds (`apple,rtkit-buffers`) and no-map `memory-region`s for them.
+- **Linux** (kernel patch 0032, after aurora's 49d9477d4406): RTKit adopts the running session instead of booting it; the helper never quiesces it; the MTP DART keeps its bypass (no reset at probe or runtime resume) and its clients get an identity domain. The DAPF bypass bit does not stick with DAPF set up, so the bypass is the DART bit alone (TCR reads 0x2 after U-Boot writes 0x6).
+- **Quiet boot** (`CONFIG_VIDEO_QUIET_BOOT=n` in pkgs/u-boot.nix): aurora's U-Boot keeps its text off the display while it autoboots. That hid the menu, and the MTP also sent no key reports then: none in an autoboot menu, every key at the prompt or with quiet boot off (debug U-Boot printing every FIFO packet).
+- **iBoot panics on reboot** (kernel patch 0033): with the adopted MTP still running and its DART in bypass through a reboot, iBoot panicked loading the boot object (3bdace14b1a9a68:2081) on 3 of 5 reboots. Linux now quiesces the adopted MTP and stops its CPU at shutdown: 0 of 7 since.
+
+Booted without U-Boot (m1n1 straight to Linux), nothing is handed over and Linux starts the MTP itself as before. If a handoff ever fails, Linux has no internal keyboard for that boot; `boot.bin.prev` restores the previous U-Boot (README, Boot chain updates).
 
 ## Tethered work with U-Boot as stage 2
 
@@ -69,4 +80,4 @@ Recorded from iBoot's own serial output, which debug USB carries when the port i
 ## Choosing an OS
 
 - **macOS or NixOS:** the Apple startup picker (hold the power button at boot) lists every volume with a boot object, so both appear. Startup Disk in macOS, or in the picker, sets the default.
-- **Which NixOS generation:** U-Boot's extlinux menu, the same `extlinux.conf` as on other NixOS ARM boards. It boots the default after 5 s; until U-Boot reads the internal keyboard, another entry can only be picked over the debug-USB console. Generations built before 2026-11-13 lack `idle=nop arm64.nowfxt` and crash when booted through U-Boot.
+- **Which NixOS generation:** U-Boot's extlinux menu, the same `extlinux.conf` as on other NixOS ARM boards. It boots the default after 5 s; type another entry's number and Enter on the internal keyboard. Generations built before 2026-11-13 lack `idle=nop arm64.nowfxt` and crash when booted through U-Boot.

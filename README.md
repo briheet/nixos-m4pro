@@ -71,7 +71,7 @@ Run everything below with `just`, from `nix develop` or `nix shell nixpkgs#just`
 
 - **Logins:** `briheet` (wheel: `sudo`, video, input, networkmanager). Root is locked; it logs in by itself only on the debug-USB console (`ttyDC0`), which needs the cable to the host and is what `tools/m4sh` drives.
 - **Desktop:** Hyprland, drawn on the CPU (no GPU driver for M4 yet), started by greetd/tuigreet. Its config is yours (`~/.config/hypr/hyprland.lua`, for example from home-manager); without one Hyprland writes its default. Keep blur, shadows and animations off: they cost the most in software.
-- **Boot menu:** U-Boot's extlinux menu lists the generations. The internal keyboard does not work in U-Boot yet; another entry can be picked over the debug-USB console (`tools/uboot-boot`).
+- **Boot menu:** U-Boot's extlinux menu lists the generations for 5 s: type an entry's number and Enter on the internal keyboard. Any key during U-Boot's countdown stops at its `=>` prompt. U-Boot hands the running keyboard coprocessor (MTP) to Linux, which adopts it (kernel patches 0032, 0033).
 - **Reboots:** `systemctl reboot` restarts through the SMC. From the host, `tools/m4reboot` does the same when Linux answers on the console and a hard reset otherwise.
 - **The Recovery / Startup Disk screen:** iBoot counts failed boots in the PMU and stops booting the volume after a run of hard resets. Linux clears the count on every boot, and so does the m1n1 proxy client; if the screen shows anyway, pick Startup Disk → `macostest`.
 
@@ -156,4 +156,4 @@ Every boot is recorded under `build/runs/<time>/` (console log with timestamps, 
 
 ## Known gaps
 
-No GPU acceleration, no backlight control, no sound, no suspend or CPU frequency scaling, no trackpad haptics, no USB-C data, no keyboard in U-Boot's menu, and the m1n1 logo of stage 1 is still Asahi's until stage 1 is reinstalled (Boot chain updates). The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).
+No GPU acceleration, no backlight control, no sound, no suspend or CPU frequency scaling, no trackpad haptics, no USB-C data, and the m1n1 logo of stage 1 is still Asahi's until stage 1 is reinstalled (Boot chain updates). The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).

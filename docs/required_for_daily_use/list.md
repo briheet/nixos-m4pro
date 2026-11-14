@@ -25,7 +25,7 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 | **Phase 2: install to the SSD** | | | | |
 | 8 | NVMe | `ans` (`iop,ascwrap-v6`, with an `ans-pcie` child), `sart,coastguard` | WIP | Done: ANS through ADT reg 9, mainline M4 driver change |
 | 9 | Disk layout | 500 GB `APPLE SSD AP0512Z`, APFS only | — | Done: p4 `nixos-boot`, p5 `nixos` after a macOS resize; `just flash` |
-| 10 | Boot chain from disk | m1n1 stage 1 → stage 2 → U-Boot → extlinux | Installer: no | Done: boots from power-on without the host; keyboard in U-Boot left (docs/boot_linux/boot-chain.md) |
+| 10 | Boot chain from disk | m1n1 stage 1 → stage 2 → U-Boot → extlinux | Installer: no | Done: boots from power-on without the host; generations picked on the internal keyboard (docs/boot_linux/boot-chain.md) |
 | 11 | Firmware from macOS | Wi-Fi, Bluetooth, and other blobs | — | Trackpad, Wi-Fi and Bluetooth firmware pinned by hash (pkgs/j614s-firmware.nix), converted on a Mac (tools/mac-firmware) |
 | 12 | NixOS module for `J614s` | — | — | Done: nixos/j614s.nix and j614s-ssd.nix, exported as `nixosModules` for other flakes |
 | **Phase 3: a usable laptop** | | | | |
@@ -92,7 +92,7 @@ The SSD is one APFS container with no free space for Linux. Making room means sh
 
 ### 10. Boot chain from disk
 
-m1n1 stage 1 in the stub volume, then stage 2 (m1n1 + device tree + U-Boot) on the ESP, and U-Boot's extlinux menu for NixOS generations. Working since 2026-11-13. Left: the internal keyboard in U-Boot (MTP), so the menu can be used on the Mac itself.
+m1n1 stage 1 in the stub volume, then stage 2 (m1n1 + device tree + U-Boot) on the ESP, and U-Boot's extlinux menu for NixOS generations. Working since 2026-11-13; the menu takes the internal keyboard since 2026-11-14.
 
 ### 11. Firmware
 
