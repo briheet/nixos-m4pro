@@ -12,6 +12,7 @@ let usage () =
   prerr_endline "       nixos-m4pro gpu-probe [DEV]   live GPU ground truth through m1n1 (build/agx/)";
   prerr_endline "       nixos-m4pro agx init TRACE SNAP          decode InitData from a trace snapshot";
   prerr_endline "       nixos-m4pro agx dump TRACE SNAP VA LEN   hexdump GPU memory (* = resolvable pointer)";
+  prerr_endline "       nixos-m4pro agx decode TRACE SNAP STRUCT VA  decode a structure (27.2 layouts)";
   prerr_endline "       nixos-m4pro agx graph TRACE SNAP VA|init DEPTH  pointer graph from an address";
   prerr_endline "                               DEV defaults to $M1N1DEVICE, then the debug USB channel";
   exit 2
@@ -64,6 +65,14 @@ let () =
           let lv = A.Initdata.levels v in
           Printf.printf "\nUAT levels it declares: %s\n"
             (String.concat " " (List.map (fun (l : A.Snapshot.level) -> Printf.sprintf "%d/%d" l.shift l.entries) lv))
+      | None -> print_endline "not in the snapshot")
+  | [ _; "agx"; "decode"; trace; snap; name; va ] ->
+      let module A = Nixos_m4pro.Agx in
+      ignore A.Regionb.queue_channels;
+      ignore A.Initdata.levels;
+      let s = A.Snapshot.load (Filename.concat trace snap) in
+      (match A.Schema.decode s ~version:[ 27; 2 ] name (A.Snapshot.int_of_hex va) with
+      | Some v -> print_endline (A.Schema.to_string v)
       | None -> print_endline "not in the snapshot")
   | [ _; "agx"; "dump"; trace; snap; va; len ] ->
       let module A = Nixos_m4pro.Agx in

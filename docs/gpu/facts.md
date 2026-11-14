@@ -74,8 +74,15 @@ decoding, `lib/agx/`). Traces stay in `build/agx/traces/`.
   `fw_status_addr` pointer is two u32 (0, 1) in 27.2; the UAT description
   follows at the same offset; after the padding, 13.x's five u32 are four
   kernel pointers in 27.2 (`0xa8`–`0xc7`). Schema: `lib/agx/initdata.ml`.
-- Region B starts with the channel table: groups of a ring buffer pointer
-  and three state pointers 16 bytes apart, as in 13.x. Next to fit.
+- Region B (`lib/agx/regionb.ml`): a 0x20-byte header, then the 12 queue
+  channels (TA/3D/CL × 4) and DevCtrl as 0x20-byte records: pointers to
+  three ring counters 0x10 apart (13.x's read pointer at +0 and write
+  pointer at +0x20, plus a new one at +0x10), then the ring. 13.x had one
+  state pointer per channel (0x10-byte records). The auxiliary channels
+  (event, firmware log, trace, stats) follow at 0x1c0 in another shape.
+- Queue ring entries are 0x18 bytes (13.x: 0x30): queue type, command
+  queue pointer, a constant 1, a u16 event number (+2 per submission), a
+  constant 5, and the new-queue flag. Next: the command queue they point at.
 
 ## Still to collect
 
