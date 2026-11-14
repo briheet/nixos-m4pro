@@ -125,7 +125,7 @@
       # For a personal NixOS configuration on the J614s (another flake):
       #   default   the hardware, the SSD layout and the m1n1/U-Boot boot
       #             chain; needs allowUnfree (Apple firmware, pinned by hash)
-      #   desktop   Hyprland on the boot framebuffer (desktop.j614s.terminal)
+      #   desktop   Hyprland on the boot framebuffer (greetd, aquamarine fix)
       #   hardware  the hardware alone, without the SSD layout
       nixosModules = {
         default.imports = [
