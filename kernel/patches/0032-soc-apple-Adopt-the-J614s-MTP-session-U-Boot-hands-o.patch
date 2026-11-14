@@ -1,0 +1,520 @@
+From 36f79d77ad7c4685059fe97432ed10add8701e74 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Sat, 14 Nov 2026 07:34:53 +0000
+Subject: [PATCH] soc: apple: Adopt the J614s MTP session U-Boot hands over
+ running
+
+With its internal keyboard, U-Boot boots the MTP and hands it to the OS
+running: this firmware cannot be restarted once quiesced. aurora-silicon's
+U-Boot describes the session on the MTP node ("apple,rtkit-handoff" =
+"mtp-live-v1", "apple,rtkit-buffers" <ep dva-hi dva-lo size mapped>, and
+no-map "memory-region"s), with the MTP DART left in bypass so DVA == PA.
+
+- rtkit: devm_apple_rtkit_init_adopted() takes over such a session: the
+  system endpoints are started, the inherited buffers installed and the
+  power states ON before mailbox RX starts, without HELLO or EPMAP.
+- rtkit-helper: adopt a described session whose CPU runs instead of
+  booting it, never quiesce it, refuse new buffer allocations in it, and
+  report it to dockchannel-hid (apple_rtkit_helper_preserves_input()).
+- apple-dart: a DART behind such a session keeps its bypass (no reset at
+  probe or runtime resume) and gives its clients an identity domain.
+
+Without a handoff (m1n1 booting Linux directly) nothing changes. Written
+for this tree after aurora-silicon/linux 49d9477d4406 and the code it
+builds on.
+---
+ drivers/iommu/apple-dart.c       |  63 ++++++++++++-
+ drivers/soc/apple/rtkit-helper.c | 153 ++++++++++++++++++++++++++++++-
+ drivers/soc/apple/rtkit.c        | 100 +++++++++++++++++++-
+ include/linux/soc/apple/rtkit.h  |  18 ++++
+ 4 files changed, 322 insertions(+), 12 deletions(-)
+
+diff --git a/drivers/iommu/apple-dart.c b/drivers/iommu/apple-dart.c
+index 9d1f6cd66..0eb328e95 100644
+--- a/drivers/iommu/apple-dart.c
++++ b/drivers/iommu/apple-dart.c
+@@ -235,6 +235,8 @@ struct apple_dart {
+ 	u32 supports_bypass : 1;
+ 	u32 four_level : 1;
+ 	u32 locked : 1;
++	/* A coprocessor handed over running uses this DART in bypass. */
++	u32 retained_bypass : 1;
+ 
+ 	dma_addr_t dma_min;
+ 	dma_addr_t dma_max;
+@@ -1271,6 +1273,8 @@ static int apple_dart_def_domain_type(struct device *dev)
+ {
+ 	struct apple_dart_master_cfg *cfg = dev_iommu_priv_get(dev);
+ 
++	if (cfg->stream_maps[0].dart->retained_bypass)
++		return IOMMU_DOMAIN_IDENTITY;
+ 	if (cfg->stream_maps[0].dart->pgsize > PAGE_SIZE)
+ 		return IOMMU_DOMAIN_IDENTITY;
+ 	if (!cfg->supports_bypass)
+@@ -1425,6 +1429,47 @@ static bool apple_dart_is_locked(struct apple_dart *dart)
+ 	return !!(readl(dart->regs + dart->hw->lock) & dart->hw->lock_bit);
+ }
+ 
++/*
++ * Whether a coprocessor behind this DART was handed over running by the boot
++ * stage (U-Boot's "apple,rtkit-handoff", mtp-live-v1 on the J614s MTP). The
++ * firmware then holds DRAM buffers by physical address through the bypass
++ * U-Boot left on: resetting the DART would cut them off, and the firmware
++ * cannot be restarted. The streams stay in bypass and the clients get an
++ * identity domain.
++ */
++static bool apple_dart_live_handoff(struct apple_dart *dart)
++{
++	struct device_node *np;
++	bool live = false;
++
++	for_each_node_with_property(np, "apple,rtkit-handoff") {
++		struct of_phandle_args args;
++		const char *handoff;
++
++		if (!of_device_is_available(np) ||
++		    of_property_read_string(np, "apple,rtkit-handoff", &handoff) ||
++		    strcmp(handoff, "mtp-live-v1") ||
++		    of_parse_phandle_with_args(np, "iommus", "#iommu-cells", 0, &args))
++			continue;
++		live = args.np == dart->dev->of_node;
++		of_node_put(args.np);
++		if (live) {
++			of_node_put(np);
++			break;
++		}
++	}
++	if (!live)
++		return false;
++
++	if (dart->locked || !dart->supports_bypass || !dart->hw->tcr_bypass ||
++	    (readl(dart->regs + DART_TCR(dart, 0)) & dart->hw->tcr_bypass) !=
++	    dart->hw->tcr_bypass) {
++		dev_err(dart->dev, "live coprocessor handoff without a DART bypass\n");
++		return false;
++	}
++	return true;
++}
++
+ static int apple_dart_probe(struct platform_device *pdev)
+ {
+ 	int ret;
+@@ -1524,7 +1569,14 @@ static int apple_dart_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	dart->locked = apple_dart_is_locked(dart);
+-	if (!dart->locked) {
++	dart->retained_bypass = apple_dart_live_handoff(dart);
++	if (dart->retained_bypass) {
++		/* Keep the streams as handed over; only take the error state. */
++		writel(readl(dart->regs + dart->hw->error), dart->regs + dart->hw->error);
++		if (dart->hw->type == DART_T8110)
++			writel(0, dart->regs + DART_T8110_ERROR_MASK);
++		dev_info(dev, "keeping the bypass of a coprocessor handed over running\n");
++	} else if (!dart->locked) {
+ 		ret = apple_dart_hw_reset(dart);
+ 		if (ret)
+ 			goto err_clk_disable;
+@@ -1694,8 +1746,11 @@ static __maybe_unused int apple_dart_suspend(struct device *dev)
+ 	struct apple_dart *dart = dev_get_drvdata(dev);
+ 	unsigned int sid, idx;
+ 
+-	/* Locked DARTs can't be restored so skip saving their registers. */
+-	if (dart->locked)
++	/*
++	 * Locked DARTs can't be restored so skip saving their registers. A
++	 * retained bypass is never reset: its coprocessor keeps running.
++	 */
++	if (dart->locked || dart->retained_bypass)
+ 		return 0;
+ 
+ 	for (sid = 0; sid < dart->num_streams; sid++) {
+@@ -1715,7 +1770,7 @@ static __maybe_unused int apple_dart_resume(struct device *dev)
+ 	int ret;
+ 
+ 	/* Locked DARTs can't be restored, and they should not need it */
+-	if (dart->locked)
++	if (dart->locked || dart->retained_bypass)
+ 		return 0;
+ 
+ 	ret = apple_dart_hw_reset(dart);
+diff --git a/drivers/soc/apple/rtkit-helper.c b/drivers/soc/apple/rtkit-helper.c
+index 13622a8e6..acacbb46d 100644
+--- a/drivers/soc/apple/rtkit-helper.c
++++ b/drivers/soc/apple/rtkit-helper.c
+@@ -10,6 +10,7 @@
+ #include <linux/ioport.h>
+ #include <linux/of.h>
+ #include <linux/of_platform.h>
++#include <linux/of_reserved_mem.h>
+ #include <linux/platform_device.h>
+ #include <linux/soc/apple/rtkit.h>
+ #include <linux/soc/apple/rtkit-helper.h>
+@@ -17,6 +18,17 @@
+ #define APPLE_ASC_CPU_CONTROL		0x44
+ #define APPLE_ASC_CPU_CONTROL_RUN	BIT(4)
+ 
++/*
++ * A running session a boot stage handed over (U-Boot, after using the
++ * keyboard), as aurora-silicon's U-Boot describes it: "apple,rtkit-handoff"
++ * names the contract, "apple,rtkit-buffers" lists the buffers the firmware
++ * holds as <endpoint dva-hi dva-lo size is-mapped>, and "memory-region"
++ * reserves those in DRAM. The DART stays in bypass, so DVA == PA.
++ */
++#define APPLE_RTKIT_HELPER_HANDOFF	"mtp-live-v1"
++#define APPLE_RTKIT_HELPER_MAX_BUFFERS	4
++#define APPLE_RTKIT_HELPER_BUFFER_CELLS	5
++
+ struct apple_rtkit_helper {
+ 	struct device *dev;
+ 	struct apple_rtkit *rtk;
+@@ -25,16 +37,20 @@ struct apple_rtkit_helper {
+ 
+ 	struct resource *sram;
+ 	void __iomem *sram_base;
++
++	/* Taken over running from the boot stage; never quiesce it. */
++	bool adopted;
+ };
+ 
+ /*
+- * Whether the boot loader handed the helper over with its input session
+- * running (U-Boot does on J713). Not in this boot chain: Linux always
+- * starts the helper itself.
++ * Whether the boot stage handed the helper over with its input session
++ * running, which dockchannel-hid has to start the trackpad differently for.
+  */
+ bool apple_rtkit_helper_preserves_input(struct device *dev)
+ {
+-	return false;
++	struct apple_rtkit_helper *helper = dev_get_drvdata(dev);
++
++	return helper && helper->adopted;
+ }
+ EXPORT_SYMBOL_GPL(apple_rtkit_helper_preserves_input);
+ 
+@@ -47,6 +63,15 @@ static int apple_rtkit_helper_shmem_setup(void *cookie, struct apple_rtkit_shmem
+ 		.name = "rtkit_map",
+ 	};
+ 
++	/*
++	 * An adopted session already has its buffers; a new allocation could
++	 * replace storage the firmware still uses.
++	 */
++	if (helper->adopted) {
++		dev_err(helper->dev, "RTKit buffer request in an adopted session\n");
++		return -ENODATA;
++	}
++
+ 	if (!bfr->iova) {
+ 		bfr->buffer = dma_alloc_coherent(helper->dev, bfr->size,
+ 						    &bfr->iova, GFP_KERNEL);
+@@ -85,11 +110,106 @@ static const struct apple_rtkit_ops apple_rtkit_helper_ops = {
+ 	.shmem_destroy = apple_rtkit_helper_shmem_destroy,
+ };
+ 
++/* 1 for a described, running session; 0 for none; an error for a bad one. */
++static int apple_rtkit_helper_live(struct apple_rtkit_helper *helper)
++{
++	const char *handoff;
++
++	if (!of_property_present(helper->dev->of_node, "apple,rtkit-handoff"))
++		return 0;
++	if (of_property_read_string(helper->dev->of_node, "apple,rtkit-handoff",
++				    &handoff) ||
++	    strcmp(handoff, APPLE_RTKIT_HELPER_HANDOFF)) {
++		dev_err(helper->dev, "unknown RTKit handoff\n");
++		return -EINVAL;
++	}
++	if (!(readl_relaxed(helper->asc_base + APPLE_ASC_CPU_CONTROL) &
++	      APPLE_ASC_CPU_CONTROL_RUN)) {
++		dev_err(helper->dev, "RTKit handoff with the CPU stopped\n");
++		return -ENODEV;
++	}
++	return 1;
++}
++
++/* Whether a no-map reserved region in memory-region holds @res. */
++static bool apple_rtkit_helper_reserved(struct device_node *np,
++					const struct resource *res)
++{
++	int i, count = of_count_phandle_with_args(np, "memory-region", NULL);
++
++	for (i = 0; i < count; i++) {
++		struct device_node *mem = of_parse_phandle(np, "memory-region", i);
++		struct reserved_mem *rmem;
++		bool ok = false;
++
++		if (!mem)
++			return false;
++		rmem = of_reserved_mem_lookup(mem);
++		if (rmem && of_property_present(mem, "no-map") &&
++		    res->start >= rmem->base &&
++		    res->end < rmem->base + rmem->size)
++			ok = true;
++		of_node_put(mem);
++		if (ok)
++			return true;
++	}
++	return false;
++}
++
++static int apple_rtkit_helper_inherit_buffers(
++	struct apple_rtkit_helper *helper,
++	struct apple_rtkit_inherited_buffer *bufs)
++{
++	struct device_node *np = helper->dev->of_node;
++	u32 cells[APPLE_RTKIT_HELPER_MAX_BUFFERS * APPLE_RTKIT_HELPER_BUFFER_CELLS];
++	int count, i, ret;
++
++	count = of_property_count_u32_elems(np, "apple,rtkit-buffers");
++	if (count == -EINVAL)
++		return 0; /* none */
++	if (count < 0 || count > ARRAY_SIZE(cells) ||
++	    count % APPLE_RTKIT_HELPER_BUFFER_CELLS)
++		return -EINVAL;
++	ret = of_property_read_u32_array(np, "apple,rtkit-buffers", cells, count);
++	if (ret)
++		return ret;
++
++	count /= APPLE_RTKIT_HELPER_BUFFER_CELLS;
++	for (i = 0; i < count; i++) {
++		u32 *t = &cells[i * APPLE_RTKIT_HELPER_BUFFER_CELLS];
++		struct apple_rtkit_shmem *b = &bufs[i].shmem;
++		struct resource res = { .flags = IORESOURCE_MEM };
++
++		if (!t[3] || t[4] > 1)
++			return -EINVAL;
++		bufs[i].endpoint = t[0];
++		b->iova = ((u64)t[1] << 32) | t[2];
++		b->size = t[3];
++		b->is_mapped = t[4];
++		res.start = b->iova;
++		res.end = b->iova + b->size - 1;
++		if (res.end < res.start || res.end > DMA_BIT_MASK(44))
++			return -EINVAL;
++
++		if (helper->sram && resource_contains(helper->sram, &res)) {
++			b->iomem = helper->sram_base + (res.start - helper->sram->start);
++		} else {
++			if (!apple_rtkit_helper_reserved(np, &res))
++				return -EINVAL;
++			b->iomem = devm_ioremap(helper->dev, res.start, b->size);
++			if (!b->iomem)
++				return -ENOMEM;
++		}
++	}
++	return count;
++}
++
+ static int apple_rtkit_helper_probe(struct platform_device *pdev)
+ {
+ 	struct device *dev = &pdev->dev;
+ 	struct apple_rtkit_helper *helper;
+-	int ret;
++	struct apple_rtkit_inherited_buffer bufs[APPLE_RTKIT_HELPER_MAX_BUFFERS] = {};
++	int count, live, ret;
+ 
+ 	/* 44 bits for addresses in standard RTKit requests */
+ 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(44));
+@@ -115,6 +235,25 @@ static int apple_rtkit_helper_probe(struct platform_device *pdev)
+ 					"Failed to map SRAM region");
+ 	}
+ 
++	live = apple_rtkit_helper_live(helper);
++	if (live < 0)
++		return dev_err_probe(dev, live, "Invalid RTKit handoff\n");
++	if (live) {
++		count = apple_rtkit_helper_inherit_buffers(helper, bufs);
++		if (count < 0)
++			return dev_err_probe(dev, count, "Invalid inherited RTKit buffers\n");
++		/* Set before RX starts, for shmem_setup. */
++		helper->adopted = true;
++		helper->rtk = devm_apple_rtkit_init_adopted(
++			dev, helper, NULL, 0, &apple_rtkit_helper_ops, bufs, count);
++		if (IS_ERR(helper->rtk))
++			return dev_err_probe(dev, PTR_ERR(helper->rtk),
++					     "Failed to adopt RTKit\n");
++		dev_info(dev, "adopted the running RTKit session (%d buffers)\n",
++			 count);
++		return 0;
++	}
++
+ 	helper->rtk =
+ 		devm_apple_rtkit_init(dev, helper, NULL, 0, &apple_rtkit_helper_ops);
+ 	if (IS_ERR(helper->rtk))
+@@ -136,6 +275,10 @@ static void apple_rtkit_helper_remove(struct platform_device *pdev)
+ {
+ 	struct apple_rtkit_helper *helper = platform_get_drvdata(pdev);
+ 
++	/* An adopted session would not come back from QUIESCED. */
++	if (helper->adopted)
++		return;
++
+ 	if (apple_rtkit_is_running(helper->rtk))
+ 		apple_rtkit_quiesce(helper->rtk);
+ 
+diff --git a/drivers/soc/apple/rtkit.c b/drivers/soc/apple/rtkit.c
+index 0de8da945..e3d62db8e 100644
+--- a/drivers/soc/apple/rtkit.c
++++ b/drivers/soc/apple/rtkit.c
+@@ -689,9 +689,67 @@ int apple_rtkit_start_ep(struct apple_rtkit *rtk, u8 endpoint)
+ }
+ EXPORT_SYMBOL_GPL(apple_rtkit_start_ep);
+ 
+-struct apple_rtkit *apple_rtkit_init(struct device *dev, void *cookie,
+-					    const char *mbox_name, int mbox_idx,
+-					    const struct apple_rtkit_ops *ops)
++/*
++ * A session a boot stage started and handed over running (U-Boot does this
++ * for the J614s MTP, whose firmware cannot be restarted once quiesced). Its
++ * first host already exchanged HELLO and the endpoint map, started the
++ * system endpoints and gave out their buffers; the firmware will not do any
++ * of that again. Take that state over instead of booting.
++ */
++static int apple_rtkit_adopt(struct apple_rtkit *rtk,
++			     const struct apple_rtkit_inherited_buffer *bufs,
++			     unsigned int count)
++{
++	static const u8 system_endpoints[] = {
++		APPLE_RTKIT_EP_CRASHLOG, APPLE_RTKIT_EP_SYSLOG,
++		APPLE_RTKIT_EP_DEBUG, APPLE_RTKIT_EP_IOREPORT,
++		APPLE_RTKIT_EP_SYS7, APPLE_RTKIT_EP_OSLOG,
++	};
++	unsigned int i;
++
++	for (i = 0; i < count; i++) {
++		struct apple_rtkit_shmem *bfr;
++
++		switch (bufs[i].endpoint) {
++		case APPLE_RTKIT_EP_CRASHLOG:
++			bfr = &rtk->crashlog_buffer;
++			break;
++		case APPLE_RTKIT_EP_SYSLOG:
++			bfr = &rtk->syslog_buffer;
++			break;
++		case APPLE_RTKIT_EP_IOREPORT:
++			bfr = &rtk->ioreport_buffer;
++			break;
++		case APPLE_RTKIT_EP_SYS7:
++			bfr = &rtk->sys7_buffer;
++			break;
++		case APPLE_RTKIT_EP_OSLOG:
++			bfr = &rtk->oslog_buffer;
++			break;
++		default:
++			return -EINVAL;
++		}
++		if (bfr->size)
++			return -EINVAL;
++		*bfr = bufs[i].shmem;
++	}
++
++	for (i = 0; i < ARRAY_SIZE(system_endpoints); i++)
++		set_bit(system_endpoints[i], rtk->endpoints);
++
++	rtk->boot_result = 0;
++	complete_all(&rtk->epmap_completion);
++	rtk->iop_power_state = APPLE_RTKIT_PWR_STATE_ON;
++	rtk->ap_power_state = APPLE_RTKIT_PWR_STATE_ON;
++	return 0;
++}
++
++static struct apple_rtkit *__apple_rtkit_init(struct device *dev, void *cookie,
++					      const char *mbox_name, int mbox_idx,
++					      const struct apple_rtkit_ops *ops,
++					      bool adopt,
++					      const struct apple_rtkit_inherited_buffer *bufs,
++					      unsigned int count)
+ {
+ 	struct apple_rtkit *rtk;
+ 	int ret;
+@@ -734,6 +792,13 @@ struct apple_rtkit *apple_rtkit_init(struct device *dev, void *cookie,
+ 		goto free_rtk;
+ 	}
+ 
++	/* Before RX starts: the running firmware may send at once. */
++	if (adopt) {
++		ret = apple_rtkit_adopt(rtk, bufs, count);
++		if (ret)
++			goto destroy_wq;
++	}
++
+ 	ret = apple_mbox_start(rtk->mbox);
+ 	if (ret)
+ 		goto destroy_wq;
+@@ -746,6 +811,14 @@ struct apple_rtkit *apple_rtkit_init(struct device *dev, void *cookie,
+ 	kfree(rtk);
+ 	return ERR_PTR(ret);
+ }
++
++struct apple_rtkit *apple_rtkit_init(struct device *dev, void *cookie,
++					    const char *mbox_name, int mbox_idx,
++					    const struct apple_rtkit_ops *ops)
++{
++	return __apple_rtkit_init(dev, cookie, mbox_name, mbox_idx, ops,
++				  false, NULL, 0);
++}
+ EXPORT_SYMBOL_GPL(apple_rtkit_init);
+ 
+ static int apple_rtkit_wait_for_completion(struct completion *c)
+@@ -1008,6 +1081,27 @@ struct apple_rtkit *devm_apple_rtkit_init(struct device *dev, void *cookie,
+ }
+ EXPORT_SYMBOL_GPL(devm_apple_rtkit_init);
+ 
++struct apple_rtkit *devm_apple_rtkit_init_adopted(
++	struct device *dev, void *cookie, const char *mbox_name, int mbox_idx,
++	const struct apple_rtkit_ops *ops,
++	const struct apple_rtkit_inherited_buffer *bufs, unsigned int count)
++{
++	struct apple_rtkit *rtk;
++	int ret;
++
++	rtk = __apple_rtkit_init(dev, cookie, mbox_name, mbox_idx, ops, true,
++				 bufs, count);
++	if (IS_ERR(rtk))
++		return rtk;
++
++	ret = devm_add_action_or_reset(dev, apple_rtkit_free_wrapper, rtk);
++	if (ret)
++		return ERR_PTR(ret);
++
++	return rtk;
++}
++EXPORT_SYMBOL_GPL(devm_apple_rtkit_init_adopted);
++
+ void devm_apple_rtkit_free(struct device *dev, struct apple_rtkit *rtk)
+ {
+ 	devm_release_action(dev, apple_rtkit_free_wrapper, rtk);
+diff --git a/include/linux/soc/apple/rtkit.h b/include/linux/soc/apple/rtkit.h
+index 42a0666e7..7fc771624 100644
+--- a/include/linux/soc/apple/rtkit.h
++++ b/include/linux/soc/apple/rtkit.h
+@@ -78,6 +78,24 @@ struct apple_rtkit;
+ struct apple_rtkit *devm_apple_rtkit_init(struct device *dev, void *cookie,
+ 					  const char *mbox_name, int mbox_idx,
+ 					  const struct apple_rtkit_ops *ops);
++/*
++ * A shared buffer a running session's first host gave to a system endpoint.
++ */
++struct apple_rtkit_inherited_buffer {
++	u8 endpoint;
++	struct apple_rtkit_shmem shmem;
++};
++
++/*
++ * Like devm_apple_rtkit_init(), for a co-processor a boot stage left running
++ * (HELLO, endpoint map and system endpoints done, @bufs given out). It is
++ * then running as far as RTKit is concerned: do not boot or wake it.
++ */
++struct apple_rtkit *devm_apple_rtkit_init_adopted(
++	struct device *dev, void *cookie, const char *mbox_name, int mbox_idx,
++	const struct apple_rtkit_ops *ops,
++	const struct apple_rtkit_inherited_buffer *bufs, unsigned int count);
++
+ /*
+  * Frees internal RTKit state allocated by devm_apple_rtkit_init().
+  *
+-- 
+2.47.0
+
