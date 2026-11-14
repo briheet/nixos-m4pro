@@ -39,6 +39,9 @@ from m1n1.hw.uat import UAT as _UAT, TTBR, PTE, Page_PTE
 # 64/2048/2048 entries). The kernel half macOS allocates in is reached
 # through the tables in gfx-shared-region, not context 0's TTBR1 (empty);
 # shared_tree() below captures those. AGX_UAT_L0_OFF overrides for checks.
+L0_OFF = int(os.environ.get("AGX_UAT_L0_OFF", "42"))
+m1n1.hw.uat.UAT_L0_OFF = L0_OFF
+
 class UAT(_UAT):
     L0_OFF = L0_OFF
     L1_SIZE = 1 << (L0_OFF - _UAT.L1_OFF)
