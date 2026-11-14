@@ -26,6 +26,11 @@ buildUBoot rec {
     CONFIG_VIDEO_FONT_SUN12X22=n
     CONFIG_VIDEO_FONT_16X32=y
     CONFIG_CMD_BOOTMENU=y
+    # aurora's quiet boot keeps U-Boot's text off the display while it boots
+    # on its own, so the extlinux menu is invisible; on the J614s the MTP
+    # keyboard also sends nothing then (2026-11-14: no key reports in an
+    # autoboot menu, every key with quiet boot off). Show the menu instead.
+    CONFIG_VIDEO_QUIET_BOOT=n
     CONFIG_FAT_WRITE=y
   '';
   postBuild = ''
