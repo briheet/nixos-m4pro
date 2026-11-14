@@ -4,7 +4,10 @@
    Baseline: m1n1 proxyclient/m1n1/fw/agx/initdata.py (macOS 13.x firmware).
    27.2 (J614s, g16s b0), from the snapshot of 2026-11-14: identical up to
    0x28, where 13.x has fw_status_addr (a pointer) and 27.2 has two u32
-   (0, 1); the UAT description that follows is at the same offset and reads
+   (0, 1); the second is 13.x's host_mapped_fw_allocations, moved (the
+   firmware refuses 0: "Host-mapped FW allocations are disabled"); InitData+0
+   (ver_info) must be 0x0c8b6339839804c0, the 27.2 interface fingerprint.
+   The UAT description that follows is at the same offset and reads
    back the level layout the snapshot walker uses (36/25/14, 64/2048/2048).
    After the 0x14 bytes of padding, 13.x has five u32 (the first must be 1);
    27.2 has four kernel pointers (0xa8..0xc7), then zeros. *)
@@ -34,7 +37,7 @@ let () =
       f "region_c" (Ptr "RegionC");
       f "fw_status" (Ptr "FwStatus") ~gate:(Until "27");
       f "unk_28" U32 ~gate:(Since "27");
-      f "unk_2c" U32 ~gate:(Since "27");
+      f "host_mapped_fw_allocations_27" U32 ~gate:(Since "27") (* must be nonzero: the firmware refuses 0 *);
       f "uat_page_size" U16;
       f "uat_page_bits" U8;
       f "uat_num_levels" U8;

@@ -12,8 +12,11 @@
    plus one at +0x10; in a busy 3D queue the third field ran one ahead of
    the other two (0x17, 0x17, 0x18), so it is the host's write pointer.
    States sit in per-kind arrays (TA at state+0x000, 3D +0x100, CL +0x200,
-   0x40 per queue, queues in reverse order), rings 0x1800 apart. The
-   auxiliary channels after 0x1c0 have another shape, not decoded yet.
+   0x40 per queue, queues in reverse order), rings 0x1800 apart. After
+   0x1c0: Event, FWLog, KTrace, Stats as 13.x {state; ring} pairs, then the
+   FWLog buffer and counters and five packed pointers (to +0x27c).
+   Channel state: +0x00 firmware read, +0x10 firmware fetched-up-to, +0x20
+   host write (DevCtrl, from the drain function).
 
    Queue ring entries (RunCmdQueueMsg): 0x30 bytes in 13.x (queue type,
    command queue pointer, head, event number, new-queue flag, timestamp, 16
@@ -48,21 +51,38 @@ let () =
       f "pad_10" (Bytes 0x10) ~gate:(Until "27"); f "write_ptr" U32; f "pad_24" (Bytes 0xc) ];
   Hashtbl.replace structs "RunCmdQueueMsg27"
     [
-      f "queue_type" U32;
-      f "pad_04" U32;
-      f "cmd_queue" (Ptr "CommandQueueInfo");
-      f "unk_10" U32 (* 1 *);
-      f "event" U16 (* +2 per submission *);
-      f "unk_16" U8 (* 5 *);
-      f "new_queue" U8;
+      f "unk_0" U64 (* 0, unread *);
+      f "cmd_queue" (Ptr "CommandQueueInfo27");
+      f "dm" U32 (* 0 TA, 1 3D, 2 CL: which scheduler loop takes it *);
+      f "wptr" U16 (* the queue's new write index; +2 per submission (0xf + 0x10) *);
+      f "queue_slot" U8 (* (queue VA - queue array base) / 0x80 *);
+      f "new_queue" U8 (* firmware validates 0x78 bytes of the queue *);
     ];
   Hashtbl.replace structs "RunCmdRing27x8" [ f "entries" (Array (8, Struct "RunCmdQueueMsg27")) ];
   Hashtbl.replace structs "RegionB"
     [
       f "channels" (Struct "ChannelInfoSet") ~gate:(Until "27");
-      f "hdr_ring" (Ptr "") ~gate:(Since "27");
+      f "hwdata_b" (Ptr "HwDataB27") ~gate:(Since "27") (* 13.x RegionB+0x1a0; the firmware reads it up to +0x27f4 *);
       f "hdr_ptr_08" (Ptr "") ~gate:(Since "27");
       f "hdr_ptr_10" (Ptr "") ~gate:(Since "27");
       f "hdr_18" U64 ~gate:(Since "27");
       f "queues" (Struct "QueueChannels27") ~gate:(Since "27");
+      (* 13.x-style {state, ring}: states in the FwStatus27 block
+         (InitData+0xa8), rings packed after it *)
+      f "event" (Struct "ChannelInfo") ~gate:(Since "27") (* 0x100 x 0x48 *);
+      f "fw_log" (Struct "ChannelInfo") ~gate:(Since "27") (* 6 x 0x100 x 0x1b0 *);
+      f "ktrace" (Struct "ChannelInfo") ~gate:(Since "27") (* 0x200 x 0x48 *);
+      f "stats" (Struct "ChannelInfo") ~gate:(Since "27") (* 0x100 x 0x48 *);
+      (* The firmware writes all four (firmware -> host) and sends 0x42 on
+         ep 0x20 after posting. FWLog is two-level: 9 x 256 index entries
+         (0x48) pointing at 0xd8-byte messages in fw_log_buf. *)
+      f "fw_log_buf" (Ptr "") ~gate:(Since "27") (* 9 x 256 x 0xd8 *);
+      f "fw_log_slots" (Array (9, U32)) ~gate:(Since "27");
+      f "fw_log_seq" (Array (9, U32)) ~gate:(Since "27");
+      f "fw_log_enable" U32 ~gate:(Since "27") (* 0 under macOS *);
+      f "ptr_254" U64 ~gate:(Since "27") (* packed pointers to host objects *);
+      f "ptr_25c" U64 ~gate:(Since "27");
+      f "ptr_264" U64 ~gate:(Since "27");
+      f "power_obj" U64 ~gate:(Since "27") (* +4/+0xc written by mailbox 0x86 and the idle path *);
+      f "ptr_274" U64 ~gate:(Since "27");
     ]

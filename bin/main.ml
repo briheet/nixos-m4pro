@@ -10,6 +10,7 @@ let usage () =
   prerr_endline "       nixos-m4pro gpu ADT           the GPU (AGX) and its firmware, decoded";
   prerr_endline "       nixos-m4pro power-chain ADT PATH  the PMGR domains a node's clock-gates need, parents first";
   prerr_endline "       nixos-m4pro gpu-probe [DEV]   live GPU ground truth through m1n1 (build/agx/)";
+  prerr_endline "       nixos-m4pro fw DIR ...         GPU firmware read statically (fw DIR help)";
   prerr_endline "       nixos-m4pro agx init TRACE SNAP          decode InitData from a trace snapshot";
   prerr_endline "       nixos-m4pro agx dump TRACE SNAP VA LEN   hexdump GPU memory (* = resolvable pointer)";
   prerr_endline "       nixos-m4pro agx decode TRACE SNAP STRUCT VA  decode a structure (27.2 layouts)";
@@ -73,6 +74,8 @@ let () =
       ignore A.Regionb.queue_channels;
       ignore A.Initdata.levels;
       ignore A.Cmdqueue.show;
+      ignore A.Hwdata.region_names;
+      ignore A.Regions27.names;
       let s = A.Snapshot.load (Filename.concat trace snap) in
       (match A.Schema.decode s ~version:[ 27; 2 ] name (A.Snapshot.int_of_hex va) with
       | Some v -> print_endline (A.Schema.to_string v)
@@ -115,4 +118,5 @@ let () =
             (if d.critical then " always-on" else "")
             (String.concat "," (List.map string_of_int d.parents)))
         (Nixos_m4pro.Pmgr_adt.domains (Nixos_m4pro.Adt.of_file adt))
+  | _ :: "fw" :: rest -> Nixos_m4pro.Fw.Cli.run rest
   | _ -> usage ()

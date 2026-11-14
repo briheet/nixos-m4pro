@@ -810,9 +810,49 @@ let () =
   check "ChannelInfoSet 13.x" (S.size [ 13; 5 ] (S.Struct "ChannelInfoSet") = 0x110);
   check "ChannelState 13.x" (S.size [ 13; 5 ] (S.Struct "ChannelState") = 0x30);
   check "ChannelState 27.2" (S.size [ 27; 2 ] (S.Struct "ChannelState") = 0x30);
-  check "RegionB 27.2 queues end at 0x1c0" (S.size [ 27; 2 ] (S.Struct "RegionB") = 0x1c0);
+  check "RegionB 27.2 queues end at 0x1c0"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "event" && o = 0x1c0) (S.layout [ 27; 2 ] "RegionB"));
+  check "CommandQueuePointers 27.2 rb_size at 0x60"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "rb_size" && o = 0x60) (S.layout [ 27; 2 ] "CommandQueuePointers"));
+  check "CommandQueuePointers 13.5 rb_size at 0x50"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "rb_size" && o = 0x50) (S.layout [ 13; 5 ] "CommandQueuePointers"));
+  check "KickCmd27 reads 0x86" (S.size [ 27; 2 ] (S.Struct "KickCmd27") = 0x86);
+  check "KickRelease27" (S.size [ 27; 2 ] (S.Struct "KickRelease27") = 0x12);
+  check "Barrier27" (S.size [ 27; 2 ] (S.Struct "Barrier27") = 0x48);
+  ignore Nixos_m4pro.Agx.Regions27.names;
+  let at27 st name o = List.exists (fun (o', (fl : S.field)) -> fl.name = name && o = o') (S.layout [ 27; 2 ] st) in
+  check "RegionC27" (S.size [ 27; 2 ] (S.Struct "RegionC27") = 0xe59 && at27 "RegionC27" "perf_period" 0x7c8
+    && at27 "RegionC27" "idle_ts" 0x98c && at27 "RegionC27" "unk_9e4" 0x9e4 && at27 "RegionC27" "override_mask" 0xa04
+    && at27 "RegionC27" "unk_e3d" 0xe3d && at27 "RegionC27" "unk_e55" 0xe55 && at27 "RegionC27" "unk_5e" 0x5e);
+  check "PowerMgmt27" (S.size [ 27; 2 ] (S.Struct "PowerMgmt27") = 0x700 && at27 "PowerMgmt27" "ppm_apply" 0x128
+    && at27 "PowerMgmt27" "thermal_apply" 0xc4 && at27 "PowerMgmt27" "host_inhibit" 0x544
+    && at27 "PowerMgmt27" "reg_override_mask" 0x644 && at27 "PowerMgmt27" "slots" 0x6a8 && at27 "PowerMgmt27" "state_bits" 0x5c4);
+  check "FwStatus27" (S.size [ 27; 2 ] (S.Struct "FwStatus27") = 0x2c0 && at27 "FwStatus27" "fw_log" 0x80
+    && at27 "FwStatus27" "ktrace" 0x240 && at27 "FwStatus27" "stats" 0x280);
+  check "RegionB 27.2 aux" (at27 "RegionB" "fw_log_buf" 0x200 && at27 "RegionB" "fw_log_enable" 0x250
+    && at27 "RegionB" "power_obj" 0x26c && S.size [ 27; 2 ] (S.Struct "RegionB") = 0x27c);
+  check "KickState27" (S.size [ 27; 2 ] (S.Struct "KickState27") = 0xe740 && at27 "KickState27" "slots" 0x4060
+    && at27 "KickState27" "stamp_log" 0x4298 && at27 "KickState27" "idle_handshake" 0x4ae0
+    && at27 "KickState27" "event_counter" 0x4b00 && at27 "KickState27" "unk_c914" 0xc914 && at27 "KickState27" "host_e714" 0xe714);
   check "RunCmdQueueMsg 27.2" (S.size [ 27; 2 ] (S.Struct "RunCmdQueueMsg27") = 0x18);
   check "CommandQueueInfo 27.2" (S.size [ 27; 2 ] (S.Struct "CommandQueueInfo27") = 0x80);
   check "JobList" (S.size [ 27; 2 ] (S.Struct "JobList") = 0x18);
+  ignore Nixos_m4pro.Agx.Hwdata.region_names;
+  check "IOMapping 27.2" (S.size [ 27; 2 ] (S.Struct "IOMapping27") = 0x28);
+  check "HwDataB 27.2 io_mappings end at 0xfa0"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "sgx_sram_ptr" && o = 0xfa0) (S.layout [ 27; 2 ] "HwDataB27"));
+  check "HwDataB 27.2 base_clock_khz at 0xfec"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "base_clock_khz" && o = 0xfec) (S.layout [ 27; 2 ] "HwDataB27"));
+  let at name o = List.exists (fun (o', (fl : S.field)) -> fl.name = name && o = o') (S.layout [ 27; 2 ] "HwDataB27") in
+  check "HwDataB 27.2 anchors"
+    (at "num_frags" 0x10a4 && at "gpu_core" 0x10d4 && at "frequencies" 0x10e4 && at "voltages_sram" 0x1524
+     && at "frequencies_alt" 0x1924 && at "pstate_map" 0x1ae4 && at "afr_pstate_limit" 0x1cac
+     && at "afr_frequencies" 0x1cb4 && at "max_pstate_alt" 0x1df4 && at "pad_2638" 0x2638
+     && at "unk_ae4" 0x2664 && at "unk_b38" 0x26d8 && at "gin1114_swwa" 0x2710
+     && at "sched_pause_timeout_us" 0x271c && at "hw_rings" 0x2740 && at "counter_ctl" 0x27d8
+     && at "unk_27e8" 0x27e8 && at "hrb_mode" 0x283e && at "unk_2846" 0x2846);
+  check "HwDataB 27.2 head" (at "timestamp_region_base" 0x28 && at "yuv_matrices" 0x50 && at "io_mappings" 0x640);
+  check "RegionA entry" (S.size [ 27; 2 ] (S.Struct "RegionAEntry27") = 0x18);
+  check "HwDataB 27.2 size" (S.size [ 27; 2 ] (S.Struct "HwDataB27") = 0x2850);
   check "version gates" (S.present [ 27; 2 ] (S.Since "27") && not (S.present [ 13; 5 ] (S.Since "27")));
   print_endline "ok"

@@ -27,5 +27,6 @@ module Probe = Boot.Probe
 module Live = Boot.Live
 module Gpu_probe = Boot.Gpu_probe
 module Agx = Agx
+module Fw = Fw
 
 val machine : string

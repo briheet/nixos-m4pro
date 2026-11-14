@@ -55,6 +55,7 @@ let layout v name =
 
 type value =
   | Int of int
+  | Word of int64  (** a u64, kept whole: OCaml's int loses bit 63 *)
   | Float of float
   | Pointer of int
   | Raw of string
@@ -66,7 +67,7 @@ let rec decode_at v s off ty =
   | U8 -> Int (Char.code s.[off])
   | U16 -> Int (String.get_uint16_le s off)
   | U32 -> Int (Int32.to_int (String.get_int32_le s off) land 0xffffffff)
-  | U64 -> Int (Int64.to_int (String.get_int64_le s off))
+  | U64 -> Word (String.get_int64_le s off)
   | F32 -> Float (Int32.float_of_bits (String.get_int32_le s off))
   | Ptr _ -> Pointer (Int64.to_int (String.get_int64_le s off))
   | Bytes n -> Raw (String.sub s off n)
@@ -79,6 +80,7 @@ let decode snap ~version name va =
 
 let rec pp ?(indent = 0) b = function
   | Int i -> Printf.bprintf b "%#x" i
+  | Word w -> Printf.bprintf b "%#Lx" w
   | Float x -> Printf.bprintf b "%g" x
   | Pointer p -> Printf.bprintf b "-> %016Lx" (Int64.of_int p)
   | Raw r -> String.iter (fun c -> Printf.bprintf b "%02x" (Char.code c)) r

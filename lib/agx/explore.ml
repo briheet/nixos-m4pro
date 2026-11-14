@@ -22,7 +22,8 @@ let hexdump ?(out = print_string) snap va len =
       for w = 0 to words - 1 do
         if w mod 4 = 0 then Printf.bprintf b "%s +%04x:" (hex64 (va + (8 * w))) (8 * w);
         let v = u64 s (8 * w) in
-        Printf.bprintf b " %s%s" (hex64 v) (if resolvable snap v then "*" else " ");
+        (* print the raw word: [v] (an OCaml int) has lost bit 63 *)
+        Printf.bprintf b " %016Lx%s" (String.get_int64_le s (8 * w)) (if resolvable snap v then "*" else " ");
         if w mod 4 = 3 || w = words - 1 then Buffer.add_char b '\n'
       done;
       out (Buffer.contents b)

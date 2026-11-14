@@ -1,0 +1,6 @@
+; Coprocessor firmware, read statically: an AArch64 decoder, the program
+; structure (functions, code coverage, cross-references, names) and the
+; memory accesses that reveal the layouts the firmware expects.
+(library
+ (name fw)
+ (wrapped true))
