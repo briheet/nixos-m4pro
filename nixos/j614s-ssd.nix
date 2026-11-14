@@ -30,6 +30,10 @@
   };
 
   boot.loader.generic-extlinux-compatible.enable = true;
+  # Each generation puts its kernel and initrd (about 40 MB) on the 512 MiB
+  # ESP; a full ESP makes the next switch fail. Older generations stay in
+  # the store until garbage collected, just not in the boot menu.
+  boot.loader.generic-extlinux-compatible.configurationLimit = lib.mkDefault 6;
   # Linux gets the device tree m1n1 filled in (memory, CPUs, framebuffer,
   # carveouts), which U-Boot passes on, not the bare one from the
   # generation: as nixos-apple-silicon does.
