@@ -1,0 +1,343 @@
+From e519a20159a9fe8844a8815d899ca1dc9207fa91 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Sat, 14 Nov 2026 09:49:00 +0000
+Subject: [PATCH] arm64: dts: apple: t6040: CPU frequency scaling
+
+The per-cluster DVFS blocks and the p-states of the J614s, after
+aurora-silicon/linux 71577e6af0bf (CJ Damsleth, Jonathan Goyvaerts):
+E 1020-2592 MHz (7 states), P0 and P1 1260-4512 MHz (19 states each),
+decoded from the ADT /arm-io/pmgr voltage-states{1,5,13}-sram. Each P
+cluster has its own OPP table, as each is its own performance domain.
+Driven by Asahi's apple-soc-cpufreq through apple,t8112-cluster-cpufreq.
+
+In t6040.dtsi, not t6041.dtsi: the tables are this chip's.
+---
+ arch/arm64/boot/dts/apple/t6040.dtsi | 312 +++++++++++++++++++++++++++
+ 1 file changed, 312 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/apple/t6040.dtsi b/arch/arm64/boot/dts/apple/t6040.dtsi
+index a629f336a..6838cf6b7 100644
+--- a/arch/arm64/boot/dts/apple/t6040.dtsi
++++ b/arch/arm64/boot/dts/apple/t6040.dtsi
+@@ -14,6 +14,318 @@ / {
+ 	compatible = "apple,t6040", "apple,arm-platform";
+ };
+ 
++/*
++ * CPU frequency scaling, after aurora-silicon/linux 71577e6af0bf (CJ
++ * Damsleth, Jonathan Goyvaerts): one DVFS block per cluster, driven by
++ * Asahi's apple-soc-cpufreq through the t8112 interface, and the p-states
++ * the J614s ADT lists. The CPU nodes of t6041.dtsi all get them; m1n1
++ * deletes the cores this chip does not have.
++ */
++/ {
++	/*
++	 * DVFS states from the ADT: /arm-io/pmgr voltage-states1-sram (E),
++	 * voltage-states5-sram (P0) and voltage-states13-sram (P1), word 0
++	 * in kHz. opp-level is the hardware p-state. Each P cluster has its
++	 * own table even though the frequencies are the same: opp-shared
++	 * means one clock domain per table.
++	 */
++	opp_e: opp-table-e {
++		compatible = "operating-points-v2";
++		opp-shared;
++
++		opp01 {
++			opp-hz = /bits/ 64 <1020000000>;
++			opp-level = <1>;
++		};
++		opp02 {
++			opp-hz = /bits/ 64 <1404000000>;
++			opp-level = <2>;
++		};
++		opp03 {
++			opp-hz = /bits/ 64 <1788000000>;
++			opp-level = <3>;
++		};
++		opp04 {
++			opp-hz = /bits/ 64 <2112000000>;
++			opp-level = <4>;
++		};
++		opp05 {
++			opp-hz = /bits/ 64 <2352000000>;
++			opp-level = <5>;
++		};
++		opp06 {
++			opp-hz = /bits/ 64 <2532000000>;
++			opp-level = <6>;
++		};
++		opp07 {
++			opp-hz = /bits/ 64 <2592000000>;
++			opp-level = <7>;
++		};
++	};
++
++	opp_p0: opp-table-p0 {
++		compatible = "operating-points-v2";
++		opp-shared;
++
++		opp01 {
++			opp-hz = /bits/ 64 <1260000000>;
++			opp-level = <1>;
++		};
++		opp02 {
++			opp-hz = /bits/ 64 <1512000000>;
++			opp-level = <2>;
++		};
++		opp03 {
++			opp-hz = /bits/ 64 <1800000000>;
++			opp-level = <3>;
++		};
++		opp04 {
++			opp-hz = /bits/ 64 <2088000000>;
++			opp-level = <4>;
++		};
++		opp05 {
++			opp-hz = /bits/ 64 <2352000000>;
++			opp-level = <5>;
++		};
++		opp06 {
++			opp-hz = /bits/ 64 <2616000000>;
++			opp-level = <6>;
++		};
++		opp07 {
++			opp-hz = /bits/ 64 <2868000000>;
++			opp-level = <7>;
++		};
++		opp08 {
++			opp-hz = /bits/ 64 <3096000000>;
++			opp-level = <8>;
++		};
++		opp09 {
++			opp-hz = /bits/ 64 <3300000000>;
++			opp-level = <9>;
++		};
++		opp10 {
++			opp-hz = /bits/ 64 <3468000000>;
++			opp-level = <10>;
++		};
++		opp11 {
++			opp-hz = /bits/ 64 <3624000000>;
++			opp-level = <11>;
++		};
++		opp12 {
++			opp-hz = /bits/ 64 <3756000000>;
++			opp-level = <12>;
++		};
++		opp13 {
++			opp-hz = /bits/ 64 <3852000000>;
++			opp-level = <13>;
++		};
++		opp14 {
++			opp-hz = /bits/ 64 <3924000000>;
++			opp-level = <14>;
++		};
++		opp15 {
++			opp-hz = /bits/ 64 <3996000000>;
++			opp-level = <15>;
++		};
++		opp16 {
++			opp-hz = /bits/ 64 <4044000000>;
++			opp-level = <16>;
++		};
++		opp17 {
++			opp-hz = /bits/ 64 <4104000000>;
++			opp-level = <17>;
++		};
++		opp18 {
++			opp-hz = /bits/ 64 <4416000000>;
++			opp-level = <18>;
++		};
++		opp19 {
++			opp-hz = /bits/ 64 <4512000000>;
++			opp-level = <19>;
++		};
++	};
++
++	opp_p1: opp-table-p1 {
++		compatible = "operating-points-v2";
++		opp-shared;
++
++		opp01 {
++			opp-hz = /bits/ 64 <1260000000>;
++			opp-level = <1>;
++		};
++		opp02 {
++			opp-hz = /bits/ 64 <1512000000>;
++			opp-level = <2>;
++		};
++		opp03 {
++			opp-hz = /bits/ 64 <1800000000>;
++			opp-level = <3>;
++		};
++		opp04 {
++			opp-hz = /bits/ 64 <2088000000>;
++			opp-level = <4>;
++		};
++		opp05 {
++			opp-hz = /bits/ 64 <2352000000>;
++			opp-level = <5>;
++		};
++		opp06 {
++			opp-hz = /bits/ 64 <2616000000>;
++			opp-level = <6>;
++		};
++		opp07 {
++			opp-hz = /bits/ 64 <2868000000>;
++			opp-level = <7>;
++		};
++		opp08 {
++			opp-hz = /bits/ 64 <3096000000>;
++			opp-level = <8>;
++		};
++		opp09 {
++			opp-hz = /bits/ 64 <3300000000>;
++			opp-level = <9>;
++		};
++		opp10 {
++			opp-hz = /bits/ 64 <3468000000>;
++			opp-level = <10>;
++		};
++		opp11 {
++			opp-hz = /bits/ 64 <3624000000>;
++			opp-level = <11>;
++		};
++		opp12 {
++			opp-hz = /bits/ 64 <3756000000>;
++			opp-level = <12>;
++		};
++		opp13 {
++			opp-hz = /bits/ 64 <3852000000>;
++			opp-level = <13>;
++		};
++		opp14 {
++			opp-hz = /bits/ 64 <3924000000>;
++			opp-level = <14>;
++		};
++		opp15 {
++			opp-hz = /bits/ 64 <3996000000>;
++			opp-level = <15>;
++		};
++		opp16 {
++			opp-hz = /bits/ 64 <4044000000>;
++			opp-level = <16>;
++		};
++		opp17 {
++			opp-hz = /bits/ 64 <4104000000>;
++			opp-level = <17>;
++		};
++		opp18 {
++			opp-hz = /bits/ 64 <4416000000>;
++			opp-level = <18>;
++		};
++		opp19 {
++			opp-hz = /bits/ 64 <4512000000>;
++			opp-level = <19>;
++		};
++	};
++
++	soc {
++		cpufreq_e: cpufreq@210e20000 {
++			compatible = "apple,t6041-cluster-cpufreq", "apple,t8112-cluster-cpufreq";
++			reg = <0x2 0x10e20000 0x0 0x1000>;
++			#performance-domain-cells = <0>;
++		};
++		cpufreq_p0: cpufreq@211e20000 {
++			compatible = "apple,t6041-cluster-cpufreq", "apple,t8112-cluster-cpufreq";
++			reg = <0x2 0x11e20000 0x0 0x1000>;
++			#performance-domain-cells = <0>;
++		};
++		cpufreq_p1: cpufreq@212e20000 {
++			compatible = "apple,t6041-cluster-cpufreq", "apple,t8112-cluster-cpufreq";
++			reg = <0x2 0x12e20000 0x0 0x1000>;
++			#performance-domain-cells = <0>;
++		};
++	};
++};
++
++&cpu_e0 {
++	operating-points-v2 = <&opp_e>;
++	performance-domains = <&cpufreq_e>;
++};
++
++&cpu_e1 {
++	operating-points-v2 = <&opp_e>;
++	performance-domains = <&cpufreq_e>;
++};
++
++&cpu_e2 {
++	operating-points-v2 = <&opp_e>;
++	performance-domains = <&cpufreq_e>;
++};
++
++&cpu_e3 {
++	operating-points-v2 = <&opp_e>;
++	performance-domains = <&cpufreq_e>;
++};
++
++&cpu_p00 {
++	operating-points-v2 = <&opp_p0>;
++	performance-domains = <&cpufreq_p0>;
++};
++
++&cpu_p01 {
++	operating-points-v2 = <&opp_p0>;
++	performance-domains = <&cpufreq_p0>;
++};
++
++&cpu_p02 {
++	operating-points-v2 = <&opp_p0>;
++	performance-domains = <&cpufreq_p0>;
++};
++
++&cpu_p03 {
++	operating-points-v2 = <&opp_p0>;
++	performance-domains = <&cpufreq_p0>;
++};
++
++&cpu_p04 {
++	operating-points-v2 = <&opp_p0>;
++	performance-domains = <&cpufreq_p0>;
++};
++
++&cpu_p05 {
++	operating-points-v2 = <&opp_p0>;
++	performance-domains = <&cpufreq_p0>;
++};
++
++&cpu_p10 {
++	operating-points-v2 = <&opp_p1>;
++	performance-domains = <&cpufreq_p1>;
++};
++
++&cpu_p11 {
++	operating-points-v2 = <&opp_p1>;
++	performance-domains = <&cpufreq_p1>;
++};
++
++&cpu_p12 {
++	operating-points-v2 = <&opp_p1>;
++	performance-domains = <&cpufreq_p1>;
++};
++
++&cpu_p13 {
++	operating-points-v2 = <&opp_p1>;
++	performance-domains = <&cpufreq_p1>;
++};
++
++&cpu_p14 {
++	operating-points-v2 = <&opp_p1>;
++	performance-domains = <&cpufreq_p1>;
++};
++
++&cpu_p15 {
++	operating-points-v2 = <&opp_p1>;
++	performance-domains = <&cpufreq_p1>;
++};
++
+ #ifndef T604X_PMGR_FROM_ADT
+ // Memory channels not present on M4 Pro
+ /delete-node/ &ps_amcc16;
+-- 
+2.47.0
+
