@@ -75,6 +75,6 @@ Each item has a check that marks it done. Items are ticked only after the check 
 
 ## Needed from the owner along the way
 
-- Reboots of the M4 Pro: `sudo /Users/briheet/code/macvdmtool/macvdmtool reboot debugusb`.
+- Reboots of the M4 Pro: `sudo ~/code/macvdmtool/macvdmtool reboot debugusb`.
 - ChatGPT and Chrome closed while debug USB reconnects; both claim the device and block the `kis` ports.
 - If uploads are too slow (item 6), a recovery trip per kernel to install the payload.
