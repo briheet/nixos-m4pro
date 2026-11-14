@@ -4,16 +4,17 @@
 # u-boot-nodtb.bin gzipped so m1n1 stage 2 knows its size and finds what
 # follows it. m1n1 passes it the kernel's device tree. u-boot/patches adapt
 # it to this chain, which hands ANS over quiesced.
-{ lib, buildUBoot, fetchFromGitHub }:
+{ lib, buildUBoot, src }:
+
+let
+  source = src;
+in
 
 buildUBoot rec {
-  version = "2026.07-aurora-wip-25cbb0f0";
-  src = fetchFromGitHub {
-    owner = "aurora-silicon";
-    repo = "u-boot";
-    rev = "25cbb0f0d09c20bf4ebc88907430efc26c9464ae";
-    hash = "sha256-51zYAq02YevOPrtirBXT2d5Q7JfUKR8X2D0EX04CUzo=";
-  };
+  # The u-boot flake input (aurora-silicon/u-boot aurora-wip, locked in
+  # flake.lock); `nix flake update u-boot` follows upstream.
+  version = "aurora-wip-${source.shortRev or "dirty"}";
+  src = source.outPath or source;
   patches = lib.filesystem.listFilesRecursive ../u-boot/patches;
   defconfig = "apple_m1_defconfig";
   extraMeta.platforms = [ "aarch64-linux" ];

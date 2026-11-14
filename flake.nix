@@ -1,11 +1,43 @@
 {
   description = "NixOS on the 14-inch M4 Pro, with the nixos-m4pro OCaml tools";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+
+    # The boot chain and kernel sources, locked in flake.lock. Following
+    # upstream is `nix flake update m1n1` (or u-boot, linux) and a rebuild;
+    # the patches in m1n1/, u-boot/ and kernel/ apply on top.
+    m1n1 = {
+      url = "github:AsahiLinux/m1n1";
+      flake = false;
+    };
+    u-boot = {
+      url = "github:aurora-silicon/u-boot/aurora-wip";
+      flake = false;
+    };
+    linux = {
+      url = "github:AsahiLinux/linux/asahi";
+      flake = false;
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      ...
+    }@inputs:
     let
+      # Sets hardware.j614s.sources from this flake's inputs; part of every
+      # module exported below, so a configuration elsewhere builds the
+      # sources locked here.
+      sources = {
+        hardware.j614s.sources = {
+          inherit (inputs) m1n1 linux;
+          uBoot = inputs.u-boot;
+        };
+      };
+
       systems = [
         "aarch64-darwin"
         "aarch64-linux"
@@ -65,9 +97,12 @@
             kernel = self.nixosConfigurations.m4pro.config.boot.kernelPackages.kernel;
           in
           {
-            m1n1 = pkgs.callPackage ./pkgs/m1n1.nix { };
-            m1n1-dev = pkgs.callPackage ./pkgs/m1n1.nix { release = false; };
-            u-boot = pkgs.callPackage ./pkgs/u-boot.nix { };
+            m1n1 = pkgs.callPackage ./pkgs/m1n1.nix { src = inputs.m1n1; };
+            m1n1-dev = pkgs.callPackage ./pkgs/m1n1.nix {
+              src = inputs.m1n1;
+              release = false;
+            };
+            u-boot = pkgs.callPackage ./pkgs/u-boot.nix { src = inputs.u-boot; };
 
             # Stage 1 for the macostest volume: the release m1n1 with its
             # config lines appended, as the Asahi installer writes them.
@@ -102,16 +137,25 @@
       #   desktop   Hyprland on the boot framebuffer (desktop.j614s.terminal)
       #   hardware  the hardware alone, without the SSD layout
       nixosModules = {
-        default = ./nixos/j614s-ssd.nix;
+        default.imports = [
+          ./nixos/j614s-ssd.nix
+          sources
+        ];
         desktop = ./nixos/desktop.nix;
-        hardware = ./nixos/j614s.nix;
+        hardware.imports = [
+          ./nixos/j614s.nix
+          sources
+        ];
       };
 
       # NixOS from RAM on the J614s, booted from the host through m1n1.
       #   nix build .#nixosConfigurations.m4pro-ram.config.system.build.netboot
       # It carries the installed system (m4pro) to put on the SSD.
       nixosConfigurations.m4pro-ram = nixpkgs.lib.nixosSystem {
-        modules = [ ./nixos/ram.nix ];
+        modules = [
+          ./nixos/ram.nix
+          sources
+        ];
         specialArgs = {
           diskSystem = self.nixosConfigurations.m4pro.config.system.build.toplevel;
           inherit espPartuuid;
@@ -120,7 +164,10 @@
 
       # NixOS on the internal SSD.
       nixosConfigurations.m4pro = nixpkgs.lib.nixosSystem {
-        modules = [ ./nixos/disk.nix ];
+        modules = [
+          ./nixos/disk.nix
+          sources
+        ];
       };
 
       devShells = each (pkgs: {

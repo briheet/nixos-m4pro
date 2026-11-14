@@ -1,12 +1,13 @@
-# m1n1 for the J614s: nixpkgs' m1n1 package at the commit this machine was
-# brought up with, plus the T6040 fixes in m1n1/patches.
+# m1n1 for the J614s: nixpkgs' m1n1 package built from the m1n1 flake input
+# (AsahiLinux/m1n1, locked in flake.lock), plus the T6040 fixes in
+# m1n1/patches. `nix flake update m1n1` follows upstream.
 #
 #   release = true   RELEASE=1 CHAINLOADING=1, as nixpkgs and the Asahi
 #                    installer build it: the stage 1 for the boot chain.
 #   release = false  the debug build (chainloading too), as installed on
 #                    macostest during bring-up
 #                    (early UART at the T6040 address, proxy on debug USB).
-{ lib, m1n1, gcc14Stdenv, fetchFromGitHub, imagemagick, nixos-icons, release ? true }:
+{ lib, m1n1, gcc14Stdenv, rustPlatform, imagemagick, nixos-icons, src, release ? true }:
 
 # Built like the m1n1 that first ran on this Mac (Debian trixie, gcc 14, no
 # extra flags). nixpkgs' cc wrapper adds hardening flags by default
@@ -16,23 +17,19 @@
 # m1n1's built-in logo rather than nixpkgs' custom-logo payload: the payload
 # is appended after the image, and with it no Nix build of m1n1 came up as
 # iBoot's boot object on J614s, while the same code chainloaded fine.
-(m1n1.override { stdenv = gcc14Stdenv; customLogo = null; }).overrideAttrs (old: rec {
+(m1n1.override { stdenv = gcc14Stdenv; customLogo = null; }).overrideAttrs (old: {
   hardeningDisable = [ "all" ];
 
-  version = "2.0.0-unstable-2026-11-04-m4pro";
+  version = "2.0.0-unstable-${src.lastModifiedDate or "0"}-${src.shortRev or "dirty"}-m4pro";
+  src = src.outPath or src;
 
-  src = fetchFromGitHub {
-    owner = "AsahiLinux";
-    repo = "m1n1";
-    rev = "cf37927d6bf47c502136e7d2c9e61f946b0b8745";
-    hash = "sha256-bgphbGh2xflPGsmM0EETEdIKmmHnjr/AEWH7OwML7J4=";
-  };
-
-  cargoDeps = m1n1.rustPlatform.fetchCargoVendor {
-    pname = "m1n1";
-    inherit version src;
-    sourceRoot = "${src.name}/rust";
-    hash = "sha256-7G9aTQEiQ8ocsY0gSoBg9A2cusfqR4a1nhFikpWMXAA=";
+  # From m1n1's own Cargo.lock, so an update needs no vendor hash; only its
+  # git dependency is pinned here, by the commit Cargo.lock names.
+  cargoDeps = rustPlatform.importCargoLock {
+    lockFile = src + "/rust/Cargo.lock";
+    outputHashes = {
+      "fatfs-0.4.0" = "sha256-tcchdtuIIN8fkLy/qf9hazkPGT2kdYuPUtC/C1bRfIQ=";
+    };
   };
 
   patches = lib.sort (a: b: a < b) (

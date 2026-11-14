@@ -19,10 +19,24 @@ in
     '';
   };
 
+  options.hardware.j614s.sources = lib.mkOption {
+    type = lib.types.submodule {
+      options = lib.genAttrs [ "m1n1" "uBoot" "linux" ] (name: lib.mkOption {
+        # A flake input (its shortRev names the build) or a path.
+        type = lib.types.raw;
+        description = "The ${name} source tree; the patches in this repository apply on top.";
+      });
+    };
+    description = ''
+      The sources of m1n1, U-Boot and the kernel. The modules this flake
+      exports set them from its locked inputs (flake.nix, `sources`).
+    '';
+  };
+
   config = {
     nixpkgs.hostPlatform = "aarch64-linux";
 
-    boot.kernelPackages = pkgs.linuxPackagesFor (pkgs.callPackage ./kernel.nix { });
+    boot.kernelPackages = pkgs.linuxPackagesFor (pkgs.callPackage ./kernel.nix { src = config.hardware.j614s.sources.linux; });
 
     # The drivers this machine needs are built into the kernel.
     boot.initrd.includeDefaultModules = false;

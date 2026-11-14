@@ -35,10 +35,18 @@ in
 
     # The extlinux installer, then the stage 2: written beside the old one
     # and renamed over it, so a failed copy leaves the previous file whole.
+    # Stage 2 is one file for all generations, so the one it replaces is
+    # kept as boot.bin.prev: if a new m1n1 or U-Boot never reaches the boot
+    # menu, recoveryOS can copy it back (README, "Boot chain updates").
     system.build.installBootLoader = lib.mkForce (
       pkgs.writeShellScript "install-extlinux-m1n1" ''
         set -eu
         ${extlinux.populateCmd} -d /boot -c "$@"
+        if [ -e /boot/m1n1/boot.bin ] && ! ${pkgs.diffutils}/bin/cmp -s /boot/m1n1/boot.bin ${cfg.stage2}; then
+          ${pkgs.coreutils}/bin/cp /boot/m1n1/boot.bin /boot/m1n1/boot.bin.prev.new
+          ${pkgs.coreutils}/bin/sync -f /boot/m1n1/boot.bin.prev.new
+          ${pkgs.coreutils}/bin/mv /boot/m1n1/boot.bin.prev.new /boot/m1n1/boot.bin.prev
+        fi
         ${pkgs.coreutils}/bin/install -D -m 644 ${cfg.stage2} /boot/m1n1/boot.bin.new
         ${pkgs.coreutils}/bin/sync -f /boot/m1n1/boot.bin.new
         ${pkgs.coreutils}/bin/mv /boot/m1n1/boot.bin.new /boot/m1n1/boot.bin

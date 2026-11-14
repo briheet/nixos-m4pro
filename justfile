@@ -11,7 +11,8 @@ set shell := ["bash", "-euo", "pipefail", "-c"]
 builder := "nixos-m4pro-builder"
 nix_image := "nixos/nix:2.28.3"
 m1n1_repo := "https://github.com/AsahiLinux/m1n1"
-m1n1_rev := "cf37927d6bf47c502136e7d2c9e61f946b0b8745"
+# The m1n1 commit flake.lock pins (`nix flake update m1n1` moves it).
+m1n1_rev := `python3 -c 'import json; print(json.load(open("flake.lock"))["nodes"]["m1n1"]["locked"]["rev"])'`
 vdm := env("MACVDMTOOL", home_directory() / "code/macvdmtool/macvdmtool")
 port := "/dev/cu.kis-100000-ch-0"
 

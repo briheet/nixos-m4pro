@@ -13,6 +13,9 @@
 # U-Boot; U-Boot shows the extlinux menu of generations and boots one.
 { config, lib, pkgs, ... }:
 
+let
+  m1n1 = args: pkgs.callPackage ../pkgs/m1n1.nix ({ src = config.hardware.j614s.sources.m1n1; } // args);
+in
 {
   imports = [
     ./j614s.nix
@@ -44,11 +47,11 @@
   # the Asahi installer lays out boot.bin. The device tree is this
   # generation's kernel's, so stage 2 is rewritten with each generation.
   boot.m1n1.stage2 = pkgs.runCommand "m1n1-stage2.bin" { } ''
-    cat ${pkgs.callPackage ../pkgs/m1n1.nix { }}/lib/m1n1/m1n1.bin \
+    cat ${m1n1 { }}/lib/m1n1/m1n1.bin \
       ${config.boot.kernelPackages.kernel}/dtbs/apple/t6040-j614s.dtb \
-      ${pkgs.callPackage ../pkgs/u-boot.nix { }}/u-boot-nodtb.bin.gz > $out
+      ${pkgs.callPackage ../pkgs/u-boot.nix { src = config.hardware.j614s.sources.uBoot; }}/u-boot-nodtb.bin.gz > $out
   '';
   # The debug m1n1 (USB proxy) beside it: from U-Boot's prompt,
   # `just stage2-proxy` copies it over boot.bin for tethered work.
-  boot.m1n1.devStage2 = "${pkgs.callPackage ../pkgs/m1n1.nix { release = false; }}/lib/m1n1/m1n1.bin";
+  boot.m1n1.devStage2 = "${m1n1 { release = false; }}/lib/m1n1/m1n1.bin";
 }

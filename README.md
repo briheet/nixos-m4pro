@@ -94,6 +94,30 @@ just flash-system   # adds a generation and writes the U-Boot stage 2 back
 tools/m4reboot
 ```
 
+## Boot chain updates
+
+m1n1, U-Boot and the kernel are flake inputs, locked in `flake.lock`; the patches in `m1n1/`, `u-boot/` and `kernel/` apply on top. To follow upstream:
+
+```
+nix flake update m1n1      # or u-boot, linux; or all three
+git commit -am "..." && git push
+```
+
+then rebuild as usual (`just update`, or bump `nixos-m4pro` in your own flake and `nixos-rebuild switch`). If a patch no longer applies, the build says which; refresh it in the patch directory.
+
+A new kernel is per generation: an older one stays in the boot menu, so rolling back is picking it there (or `nixos-rebuild switch --rollback`).
+
+Stage 2 (`/boot/m1n1/boot.bin`: m1n1 + device tree + U-Boot) is one file for all generations, written by the latest switch. The one it replaces is kept as `/boot/m1n1/boot.bin.prev`. If a new m1n1 or U-Boot never reaches the boot menu, hold the power button for recoveryOS, open Terminal, and put the previous one back:
+
+```
+diskutil mount disk0s4      # the ESP, NIXBOOT
+cp /Volumes/NIXBOOT/m1n1/boot.bin.prev /Volumes/NIXBOOT/m1n1/boot.bin
+diskutil unmount /Volumes/NIXBOOT
+reboot
+```
+
+Then roll the repository back (`git revert`, or `nix flake update` back to the old lock) before the next switch, which would write the broken stage 2 again. Stage 1 on `macostest` is not touched by any of this; changing it needs recoveryOS and `just m1n1-serve`.
+
 ## Testing without installing
 
 - `tools/uboot-boot -- ARG -ARG ...` reboots, stops U-Boot over debug USB, and boots the installed generation with words added to or (`-ARG`) removed from its command line, for example `tools/uboot-boot -- dockchannel_hid.dyndbg=+p` for a driver's debug messages.
