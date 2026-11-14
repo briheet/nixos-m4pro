@@ -1,4 +1,4 @@
-From 36f79d77ad7c4685059fe97432ed10add8701e74 Mon Sep 17 00:00:00 2001
+From b01166b03bb0113f7ec23acc681d88a4d56bddef Mon Sep 17 00:00:00 2001
 From: briheet-invideo <dev@localhost>
 Date: Sat, 14 Nov 2026 07:34:53 +0000
 Subject: [PATCH] soc: apple: Adopt the J614s MTP session U-Boot hands over
@@ -23,14 +23,14 @@ Without a handoff (m1n1 booting Linux directly) nothing changes. Written
 for this tree after aurora-silicon/linux 49d9477d4406 and the code it
 builds on.
 ---
- drivers/iommu/apple-dart.c       |  63 ++++++++++++-
+ drivers/iommu/apple-dart.c       |  72 ++++++++++++++-
  drivers/soc/apple/rtkit-helper.c | 153 ++++++++++++++++++++++++++++++-
  drivers/soc/apple/rtkit.c        | 100 +++++++++++++++++++-
  include/linux/soc/apple/rtkit.h  |  18 ++++
- 4 files changed, 322 insertions(+), 12 deletions(-)
+ 4 files changed, 331 insertions(+), 12 deletions(-)
 
 diff --git a/drivers/iommu/apple-dart.c b/drivers/iommu/apple-dart.c
-index 9d1f6cd66..0eb328e95 100644
+index 9d1f6cd66..3a0ad518a 100644
 --- a/drivers/iommu/apple-dart.c
 +++ b/drivers/iommu/apple-dart.c
 @@ -235,6 +235,8 @@ struct apple_dart {
@@ -51,7 +51,7 @@ index 9d1f6cd66..0eb328e95 100644
  	if (cfg->stream_maps[0].dart->pgsize > PAGE_SIZE)
  		return IOMMU_DOMAIN_IDENTITY;
  	if (!cfg->supports_bypass)
-@@ -1425,6 +1429,47 @@ static bool apple_dart_is_locked(struct apple_dart *dart)
+@@ -1425,6 +1429,56 @@ static bool apple_dart_is_locked(struct apple_dart *dart)
  	return !!(readl(dart->regs + dart->hw->lock) & dart->hw->lock_bit);
  }
  
@@ -67,6 +67,7 @@ index 9d1f6cd66..0eb328e95 100644
 +{
 +	struct device_node *np;
 +	bool live = false;
++	u32 tcr;
 +
 +	for_each_node_with_property(np, "apple,rtkit-handoff") {
 +		struct of_phandle_args args;
@@ -87,10 +88,18 @@ index 9d1f6cd66..0eb328e95 100644
 +	if (!live)
 +		return false;
 +
-+	if (dart->locked || !dart->supports_bypass || !dart->hw->tcr_bypass ||
-+	    (readl(dart->regs + DART_TCR(dart, 0)) & dart->hw->tcr_bypass) !=
-+	    dart->hw->tcr_bypass) {
-+		dev_err(dart->dev, "live coprocessor handoff without a DART bypass\n");
++	/*
++	 * Only the DART bypass bit counts: with DAPF set up (m1n1 does for the
++	 * J614s MTP) the DAPF bypass bit does not stick, and U-Boot's write of
++	 * both reads back as the DART bit alone.
++	 */
++	tcr = readl(dart->regs + DART_TCR(dart, 0));
++	if (dart->locked || !dart->supports_bypass ||
++	    !(tcr & (dart->hw->type == DART_T8110 ? DART_T8110_TCR_BYPASS_DART :
++						     DART_T8020_TCR_BYPASS_DART))) {
++		dev_err(dart->dev,
++			"live coprocessor handoff without a DART bypass (TCR %#x)\n",
++			tcr);
 +		return false;
 +	}
 +	return true;
@@ -99,7 +108,7 @@ index 9d1f6cd66..0eb328e95 100644
  static int apple_dart_probe(struct platform_device *pdev)
  {
  	int ret;
-@@ -1524,7 +1569,14 @@ static int apple_dart_probe(struct platform_device *pdev)
+@@ -1524,7 +1578,14 @@ static int apple_dart_probe(struct platform_device *pdev)
  	}
  
  	dart->locked = apple_dart_is_locked(dart);
@@ -115,7 +124,7 @@ index 9d1f6cd66..0eb328e95 100644
  		ret = apple_dart_hw_reset(dart);
  		if (ret)
  			goto err_clk_disable;
-@@ -1694,8 +1746,11 @@ static __maybe_unused int apple_dart_suspend(struct device *dev)
+@@ -1694,8 +1755,11 @@ static __maybe_unused int apple_dart_suspend(struct device *dev)
  	struct apple_dart *dart = dev_get_drvdata(dev);
  	unsigned int sid, idx;
  
@@ -129,7 +138,7 @@ index 9d1f6cd66..0eb328e95 100644
  		return 0;
  
  	for (sid = 0; sid < dart->num_streams; sid++) {
-@@ -1715,7 +1770,7 @@ static __maybe_unused int apple_dart_resume(struct device *dev)
+@@ -1715,7 +1779,7 @@ static __maybe_unused int apple_dart_resume(struct device *dev)
  	int ret;
  
  	/* Locked DARTs can't be restored, and they should not need it */
