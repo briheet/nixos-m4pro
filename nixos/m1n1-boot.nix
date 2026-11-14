@@ -6,7 +6,7 @@
 # switch or nixos-install writes the stage 2 that goes with it, as
 # nixos-apple-silicon's boot-m1n1 module does.
 #
-# Stage 2 is m1n1 + device tree + U-Boot (nixos/disk.nix). The debug m1n1
+# Stage 2 is m1n1 + device tree + U-Boot (nixos/j614s-ssd.nix). The debug m1n1
 # goes beside it as m1n1/dev.bin, for going back to the USB proxy.
 { config, lib, pkgs, ... }:
 

@@ -8,18 +8,18 @@ NixOS runs from the internal SSD and boots from power-on without the host: m1n1 
 
 | Path | What |
 |---|---|
-| `flake.nix` | `nixosConfigurations.m4pro` (on the SSD), `m4pro-ram` (from RAM, the installer), packages `boot-files`, `m1n1`, `m1n1-dev`, `m1n1-stage1`, `u-boot` |
-| `nixos/` | `common.nix` shared settings (kernel parameters, firmware, logins, NetworkManager, console font), `disk.nix` the installed system, `desktop.nix` Hyprland, `ram.nix` the installer, `kernel.nix` the kernel, `m1n1-boot.nix` writes stage 2 to the ESP |
-| `kernel/patches/` | Patches on AsahiLinux/linux `6ba0637d`: J614s device trees (PMGR, NVMe, PMP, SMC, SPMI PMU, MTP, PCIe, Wi-Fi/Bluetooth), the dockchannel console, NVMe and PMP changes, and ports from aurora-silicon (WFI register save, MTP transport, brcmfmac BCM4388 C2) |
+| `flake.nix` | inputs nixpkgs, `m1n1`, `u-boot`, `linux` (sources, locked in `flake.lock`); `nixosModules` `default`, `hardware`, `desktop`; `nixosConfigurations.m4pro` (on the SSD), `m4pro-ram` (from RAM, the installer); packages `boot-files`, `m1n1`, `m1n1-dev`, `m1n1-stage1`, `u-boot` |
+| `nixos/` | `j614s.nix` the hardware (kernel and its parameters, firmware, console font, debug console; `nixosModules.hardware`), `j614s-ssd.nix` adds the SSD layout and boot chain (`nixosModules.default`), `m1n1-boot.nix` writes stage 2 to the ESP, `kernel.nix` the kernel, `desktop.nix` and `hyprland.lua` Hyprland (`nixosModules.desktop`), `common.nix` this repo's own policy (hostname, logins, sshd), `disk.nix` the installed system, `ram.nix` the installer |
+| `kernel/patches/` | Patches on AsahiLinux/linux `asahi` (the `linux` input): J614s device trees (PMGR, NVMe, PMP, SMC, SPMI PMU, MTP, PCIe, Wi-Fi/Bluetooth), the dockchannel console, NVMe and PMP changes, and ports from aurora-silicon (WFI register save, MTP transport, brcmfmac BCM4388 C2) |
 | `kernel/*.config` | Kernel configs; `m4pro-nixos.full.config` is the one NixOS builds, `m4pro-nixos.config` lists what was added and why |
-| `m1n1/patches/` | m1n1 fixes for T6040 on m1n1 `cf37927d` (DAPF, CTRR, MCC, ANS quiesce, chainload) |
+| `m1n1/patches/` | m1n1 fixes for T6040 on the `m1n1` input (DAPF, CTRR, MCC, ANS quiesce, chainload) |
 | `u-boot/patches/` | aurora-silicon U-Boot change for this boot chain (ANS handed over quiesced) |
-| `pkgs/` | `m1n1.nix` (pinned m1n1 with the patches and the NixOS logo), `u-boot.nix`, `j614s-firmware.nix` (Apple firmware, pinned by hash), `m4pro-install.nix` (the installer) |
+| `pkgs/` | `m1n1.nix` (m1n1 with the patches and the NixOS logo), `u-boot.nix`, `j614s-firmware.nix` (Apple firmware, pinned by hash), `m4pro-install.nix` (the installer) |
 | `tools/` | Host side: `tether-boot.py`, `m4console`, `m4sh`, `m4reboot`, `uboot-boot`, `mac-firmware`, `m1n1-try`, `stage1-test.py` |
 | `bin/`, `lib/` | `nixos-m4pro`, OCaml tools: ADT parser, PMGR device-tree generator, m1n1 proxy probes |
 | `docs/` | Bring-up notes per subsystem, the boot chain, and the hardware list |
 
-Everything is pinned: nixpkgs by `flake.lock`, the kernel, m1n1 and U-Boot sources by commit and hash, and the patches in the repo. Apple's firmware is the one input that cannot be in the repo: Nix knows it by hash, and `tools/mac-firmware` produces exactly those files from a Mac running macOS.
+Everything is pinned: nixpkgs and the kernel, m1n1 and U-Boot sources by `flake.lock`, and the patches in the repo. Apple's firmware is the one input that cannot be in the repo: Nix knows it by hash, and `tools/mac-firmware` produces exactly those files from a Mac running macOS.
 
 ## What you need
 
@@ -70,7 +70,7 @@ Run everything below with `just`, from `nix develop` or `nix shell nixpkgs#just`
 ## Using it
 
 - **Logins:** `briheet` (wheel: `sudo`, video, input, networkmanager). Root is locked; it logs in by itself only on the debug-USB console (`ttyDC0`), which needs the cable to the host and is what `tools/m4sh` drives.
-- **Desktop:** Hyprland, drawn on the CPU (no GPU driver for M4 yet) at scale 2. Super+Return terminal (foot), Super+D launcher (fuzzel), Super+B Firefox, Super+Q close, Super+1-5 workspaces, three-finger swipe between workspaces, Super+Shift+E log out. The first login copies `/etc/hypr/hyprland.conf` to `~/.config/hypr/`; blur, shadows and animations start off.
+- **Desktop:** Hyprland, drawn on the CPU (no GPU driver for M4 yet) at scale 2. Super+Return terminal (foot), Super+D launcher (fuzzel), Super+B Firefox, Super+Q close, Super+F fullscreen, Super+V float, Super+1-0 workspaces (Shift to move a window), three-finger swipe between workspaces, Super+Shift+E log out. The first login copies `/etc/hypr/hyprland.lua` (nixos/hyprland.lua) to `~/.config/hypr/`; blur, shadows and animations start off.
 - **Boot menu:** U-Boot's extlinux menu lists the generations. The internal keyboard does not work in U-Boot yet; another entry can be picked over the debug-USB console (`tools/uboot-boot`).
 - **Reboots:** `systemctl reboot` restarts through the SMC. From the host, `tools/m4reboot` does the same when Linux answers on the console and a hard reset otherwise.
 - **The Recovery / Startup Disk screen:** iBoot counts failed boots in the PMU and stops booting the volume after a run of hard resets. Linux clears the count on every boot, and so does the m1n1 proxy client; if the screen shows anyway, pick Startup Disk → `macostest`.

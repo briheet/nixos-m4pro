@@ -22,7 +22,7 @@ Only stage 1 needs a trip to recoveryOS. Stage 2, U-Boot and the menu sit on the
 |---|---|---|
 | 1 | **m1n1 stage 1**, release build with chainloading (`just m1n1`), installed on `macostest` from 1TR with `kmutil` (`just m1n1-serve`) | Done: padded to 0x3f4000, chainloads stage 2 on every power-on |
 | 2 | **Chainloading on M4** | Done: m1n1 patch 0008 moves iBoot's boot blobs; Linux keeps the SSD afterwards (pmp.md) |
-| 3 | **Stage 2 in the NixOS system**: `boot.m1n1.stage2` in nixos/disk.nix, installed by nixos/m1n1-boot.nix | Done |
+| 3 | **Stage 2 in the NixOS system**: `boot.m1n1.stage2` in nixos/j614s-ssd.nix, installed by nixos/m1n1-boot.nix | Done |
 | 4 | **U-Boot for the M4 Pro**: `pkgs/u-boot.nix` (aurora-silicon `aurora-wip`, `apple_m1_defconfig`) with u-boot/patches | Done for NVMe and serial; the internal keyboard does not work in U-Boot yet (MTP helper: "DART bypass unavailable") |
 | 5 | **Boot menu**: extlinux (`generic-extlinux-compatible`), without the generation's device tree so Linux gets the one m1n1 filled in | Done; systemd-boot through U-Boot's EFI is not needed |
 | 6 | **Name in the startup picker**: `diskutil rename macostest NixOS` in macOS | Optional |
@@ -33,7 +33,7 @@ Tested from the host before anything was written to the SSD: `tools/tether-boot.
 
 - **ANS arrives quiesced.** Our m1n1 stages hand ANS over quiesced (m1n1 patch 0005), with the controller disabled but programmed. aurora's U-Boot took that for a live session to adopt and waited forever for CSTS.RDY. u-boot/patches/0001 runs the INIT handshake whenever the controller is disabled and quiesces ANS again at hand-off, which Linux (kernel patch 0021) wakes as it does after m1n1.
 - **The device tree needs names U-Boot looks up**: `reg-names = "data"` on the dockchannel UART and the NVMMU window as a third NVMe reg (`nvme`, `ans`, `nvmmu`), plus an empty `/reserved-memory` node for its fix-ups (kernel patches 0022, 0023).
-- **M4 cores lose their registers on WFI and WFIT.** On M1–M3 m1n1 sets `CYC_OVRD` so WFI keeps state; on M4 iBoot locks it. m1n1's kboot therefore appends `idle=nop arm64.nowfxt` to the kernel command line, but U-Boot replaces the command line with the extlinux `APPEND`, and every secondary CPU then crashed on its first idle (pc 0, all registers zero). Both parameters are now in `boot.kernelParams` (nixos/common.nix). See Yureka Lilian's "The forgetful CPU" and the upstream erratum thread "arm64: errata: Handle Apple WFI State Loss".
+- **M4 cores lose their registers on WFI and WFIT.** On M1–M3 m1n1 sets `CYC_OVRD` so WFI keeps state; on M4 iBoot locks it. m1n1's kboot therefore appends `idle=nop arm64.nowfxt` to the kernel command line, but U-Boot replaces the command line with the extlinux `APPEND`, and every secondary CPU then crashed on its first idle (pc 0, all registers zero). `arm64.nowfxt` is now in `boot.kernelParams` (nixos/j614s.nix); instead of `idle=nop`, kernel patch 0024 saves the registers around the idle WFI. See Yureka Lilian's "The forgetful CPU" and the upstream erratum thread "arm64: errata: Handle Apple WFI State Loss".
 - **U-Boot points `/chosen/stdout-path` at the framebuffer** when it has a keyboard driver and `stdout` includes vidconsole, which moves Linux's `earlycon` off the dockchannel. Set `stdout serial` at the prompt to see early kernel output on the host.
 
 ## Tethered work with U-Boot as stage 2

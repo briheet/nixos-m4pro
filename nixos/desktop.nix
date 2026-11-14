@@ -4,7 +4,7 @@
 # llvmpipe on the CPU into simpledrm (the framebuffer iBoot set up, which m1n1
 # describes), at 3024x1964 and scale 2. Blur, shadows and animations start
 # off because they cost the most in software; turn them on in
-# ~/.config/hypr/hyprland.conf if they are smooth enough.
+# ~/.config/hypr/hyprland.lua if they are smooth enough.
 #
 # Log in on the screen (greetd/tuigreet); it starts Hyprland. The first
 # login copies /etc/hypr/hyprland.lua (nixos/hyprland.lua) to

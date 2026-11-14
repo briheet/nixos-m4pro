@@ -6,7 +6,7 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 
 ## What is already in hand
 
-- m1n1 (`cf37927d` plus m1n1/patches, development build) is the custom boot object on the `macostest` volume. `Macintosh HD` is untouched and stays at Full Security.
+- m1n1 stage 1 (m1n1/patches on the `m1n1` input) is the custom boot object on the `macostest` volume and chainloads stage 2 from the ESP. `Macintosh HD` is untouched and stays at Full Security.
 - The host (an M5 Max) reaches m1n1's proxy over debug USB at `/dev/cu.kis-100000-ch-0` after `macvdmtool debugusb`. Serial mode is refused.
 - Read, write, power, and interrupt-routing steps for the UART, watchdog, PMGR, and AIC run on the live board through `nixos-m4pro`.
 
@@ -27,7 +27,7 @@ Hardware names come from this Mac's Apple device tree, read through m1n1 on 2026
 | 9 | Disk layout | 500 GB `APPLE SSD AP0512Z`, APFS only | — | Done: p4 `nixos-boot`, p5 `nixos` after a macOS resize; `just flash` |
 | 10 | Boot chain from disk | m1n1 stage 1 → stage 2 → U-Boot → extlinux | Installer: no | Done: boots from power-on without the host; keyboard in U-Boot left (docs/boot_linux/boot-chain.md) |
 | 11 | Firmware from macOS | Wi-Fi, Bluetooth, and other blobs | — | Trackpad, Wi-Fi and Bluetooth firmware pinned by hash (pkgs/j614s-firmware.nix), converted on a Mac (tools/mac-firmware) |
-| 12 | NixOS module for `J614s` | — | — | nixos/common.nix, disk.nix, ram.nix |
+| 12 | NixOS module for `J614s` | — | — | Done: nixos/j614s.nix and j614s-ssd.nix, exported as `nixosModules` for other flakes |
 | **Phase 3: a usable laptop** | | | | |
 | 13 | Keyboard and trackpad | `mtp` coprocessor, `dockchannel-mtp`, `hid-transport,mux` | TBA | Done: keyboard and multitouch trackpad (docs/boot_linux/keyboard.md); no Force Touch haptics yet |
 | 14 | Internal display | `dcp`, `disp0,t604x`, Parade `DP855` TCON on `spi4` | TBA | Not started |
