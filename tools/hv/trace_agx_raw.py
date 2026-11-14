@@ -62,8 +62,8 @@ BLOCK_LIMIT = 16 << 20  # skip single mappings larger than this (log them)
 # device and must not be read.
 RAM_LO, RAM_HI = 0x10000000000, 0x10600000000
 
-trace_device("/arm-io/sgx", False)
-trace_device("/arm-io/gfx-asc", False)
+# No trace_device() on sgx/gfx-asc: trapping their registers slows macOS to
+# a crawl and the snapshots read memory directly.
 
 
 class RawAGXTracer(ASCTracer):
@@ -106,6 +106,12 @@ class RawAGXTracer(ASCTracer):
             self.snapshot("first-app-tx-ep%#x" % int(r1.EP))
         elif self.nmsg in self.SNAP_AT:
             self.snapshot("after-%d-msgs" % self.nmsg)
+            if self.nmsg == max(self.SNAP_AT) and not os.environ.get("AGX_RAW_KEEP"):
+                # Every traced message is a trip to the host: macOS's UI
+                # freezes. Stop trapping the mailbox; later snapshots come from
+                # the hypervisor shell (SIGINT, agx_raw.snapshot("x"), SIGUSR1).
+                self.event("mailbox-tracing-stopped", messages=self.nmsg)
+                self.stop()
         elif self.nmsg % 64 == 0 and os.path.exists(self.trigger):
             # Snapshot on request from the host: `echo LABEL > OUT/snap-now`.
             with open(self.trigger) as f:
