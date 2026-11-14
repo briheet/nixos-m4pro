@@ -14,7 +14,7 @@ power on
                       └─ Linux + initrd    root on nvme0n1p5
 ```
 
-Only stage 1 needs a trip to recoveryOS. Stage 2, U-Boot and the menu sit on the ESP; `nixos/m1n1-boot.nix` writes stage 2 with the boot loader, so `nixos-rebuild` (or `just flash-system`) updates them with each generation. From power-on to the login prompt takes about 90 s.
+Only stage 1 needs a trip to recoveryOS; each switch puts the matching one on the ESP with `m1n1/stage1-install.sh` for that trip, and `m1n1-status` shows which stage 1 booted (README, Boot chain updates). Stage 2, U-Boot and the menu sit on the ESP; `nixos/m1n1-boot.nix` writes stage 2 with the boot loader, so `nixos-rebuild` (or `just flash-system`) updates them with each generation. From power-on to the login prompt takes about 90 s.
 
 ## Status
 

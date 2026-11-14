@@ -54,4 +54,7 @@ in
   # The debug m1n1 (USB proxy) beside it: from U-Boot's prompt,
   # `just stage2-proxy` copies it over boot.bin for tethered work.
   boot.m1n1.devStage2 = "${m1n1 { release = false; }}/lib/m1n1/m1n1.bin";
+  # Stage 1 is the same release m1n1, written to the ESP for recoveryOS to
+  # install (nixos/m1n1-boot.nix).
+  boot.m1n1.stage1 = m1n1 { };
 }

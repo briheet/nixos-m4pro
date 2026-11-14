@@ -116,7 +116,17 @@ diskutil unmount /Volumes/NIXBOOT
 reboot
 ```
 
-Then roll the repository back (`git revert`, or `nix flake update` back to the old lock) before the next switch, which would write the broken stage 2 again. Stage 1 on `macostest` is not touched by any of this; changing it needs recoveryOS and `just m1n1-serve`.
+Then roll the repository back (`git revert`, or `nix flake update` back to the old lock) before the next switch, which would write the broken stage 2 again.
+
+Stage 1, the m1n1 on `macostest` that iBoot starts, only chainloads stage 2, so an old one keeps working; Apple lets only recoveryOS change it, never a running system. Each switch writes the stage 1 for its m1n1 to the ESP (`m1n1/stage1.bin`) with an install script, and says when the stage 1 that booted is a different one. `m1n1-status` shows what booted at each step. To update stage 1, in recoveryOS Terminal:
+
+```
+diskutil mount disk0s4
+sh /Volumes/NIXBOOT/m1n1/stage1-install.sh         # this generation's stage 1
+sh /Volumes/NIXBOOT/m1n1/stage1-install.sh good    # or the last one seen booting
+```
+
+It asks for confirmation and your password (kmutil), and refuses any volume but `macostest`. The ESP keeps the last stage 1 seen booting as `stage1-good.bin`, so a stage 1 that fails can be replaced from the same Terminal. `just m1n1-serve` (from the host, over USB) still works too.
 
 ## Testing without installing
 
@@ -146,4 +156,4 @@ Every boot is recorded under `build/runs/<time>/` (console log with timestamps, 
 
 ## Known gaps
 
-No GPU acceleration, no backlight control, no sound, no suspend or CPU frequency scaling, no trackpad haptics, no USB-C data, no keyboard in U-Boot's menu, and the m1n1 logo of stage 1 is still Asahi's until stage 1 is reinstalled. The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).
+No GPU acceleration, no backlight control, no sound, no suspend or CPU frequency scaling, no trackpad haptics, no USB-C data, no keyboard in U-Boot's menu, and the m1n1 logo of stage 1 is still Asahi's until stage 1 is reinstalled (Boot chain updates). The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).

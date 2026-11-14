@@ -51,20 +51,11 @@
       espPartuuid = "c1689edb-3947-4ed4-ba55-696ead4f2833";
 
       # m1n1 with the stage 1 config lines appended, as the Asahi installer
-      # writes them (asahi-installer src/m1n1.py): chainload stage 2 from the
-      # ESP. The four NUL bytes end m1n1's payload list.
+      # writes them: chainload stage 2 from the ESP (pkgs/make-stage1.sh).
       stage1 =
         m1n1:
         nixpkgs.legacyPackages.aarch64-linux.runCommand "m1n1-stage1.bin" { } ''
-          cat ${m1n1}/lib/m1n1/m1n1.bin > $out
-          printf 'chainload=%s;m1n1/boot.bin\nchosen.asahi,efi-system-partition=%s\n' \
-            ${espPartuuid} ${espPartuuid} >> $out
-          printf '\0\0\0\0' >> $out
-          # iBoot on T6040 panics (3bdace14b1a9a68:2081) on a boot object that
-          # is not a whole number of 16 KiB pages; m1n1 alone is, the config
-          # lines are not. Zero-pad; m1n1 stops at the terminator above.
-          size=$(stat -c %s $out)
-          truncate -s $(( (size + 16383) / 16384 * 16384 )) $out
+          sh ${./pkgs/make-stage1.sh} ${m1n1}/lib/m1n1/m1n1.bin ${espPartuuid} $out
         '';
     in
     {

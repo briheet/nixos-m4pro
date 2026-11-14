@@ -17,8 +17,26 @@
 # m1n1's built-in logo rather than nixpkgs' custom-logo payload: the payload
 # is appended after the image, and with it no Nix build of m1n1 came up as
 # iBoot's boot object on J614s, while the same code chainloaded fine.
+let
+  patchDir = ../m1n1/patches;
+  patchFiles = lib.sort (a: b: a < b) (builtins.attrNames (builtins.readDir patchDir));
+  # What m1n1 reports as its version (chosen/asahi,m1n1-stage1-version and
+  # -stage2-version in Linux's device tree): the upstream commit and a hash
+  # of the patches on it. Without it a build from a tarball says "unknown".
+  versionTag =
+    "${src.shortRev or "dirty"}-m4pro-"
+    + builtins.substring 0 8 (
+      builtins.hashString "sha256" (lib.concatMapStrings (f: builtins.readFile (patchDir + "/${f}")) patchFiles)
+    );
+in
 (m1n1.override { stdenv = gcc14Stdenv; customLogo = null; }).overrideAttrs (old: {
   hardeningDisable = [ "all" ];
+  env = (old.env or { }) // {
+    M1N1_VERSION_TAG = versionTag;
+  };
+  passthru = (old.passthru or { }) // {
+    inherit versionTag;
+  };
 
   version = "2.0.0-unstable-${src.lastModifiedDate or "0"}-${src.shortRev or "dirty"}-m4pro";
   src = src.outPath or src;
@@ -32,9 +50,7 @@
     };
   };
 
-  patches = lib.sort (a: b: a < b) (
-    map (f: ../m1n1/patches + "/${f}") (builtins.attrNames (builtins.readDir ../m1n1/patches))
-  );
+  patches = map (f: patchDir + "/${f}") patchFiles;
 
   makeFlags =
     if release then
