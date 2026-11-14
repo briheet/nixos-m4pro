@@ -796,4 +796,14 @@ let () =
   let _, again = Live.aic_init transport in
   check "aic init repeat is a no-op"
     (List.for_all (fun (s : Live.cfg_step) -> s.cfg_before = 0xa3L && s.cfg_after = 0xa3L) again);
+  (* AGX schemas: InitData is 0xbc bytes on 13.x firmware (m1n1's
+     initdata.py) and 0xc8 on 27.2 (traced 2026-11-14). *)
+  let module S = Nixos_m4pro.Agx.Schema in
+  ignore Nixos_m4pro.Agx.Initdata.levels;
+  check "InitData 13.5 size" (S.size [ 13; 5 ] (S.Struct "InitData") = 0xbc);
+  check "InitData 27.2 size" (S.size [ 27; 2 ] (S.Struct "InitData") = 0xc8);
+  check "UatLevelInfo size" (S.size [ 27; 2 ] (S.Struct "UatLevelInfo") = 0x20);
+  check "uat_page_size offset 27.2"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "uat_page_size" && o = 0x30) (S.layout [ 27; 2 ] "InitData"));
+  check "version gates" (S.present [ 27; 2 ] (S.Since "27") && not (S.present [ 13; 5 ] (S.Since "27")));
   print_endline "ok"

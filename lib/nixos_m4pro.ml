@@ -26,5 +26,6 @@ module Client = Boot.Client
 module Probe = Boot.Probe
 module Live = Boot.Live
 module Gpu_probe = Boot.Gpu_probe
+module Agx = Agx
 
 let machine = Client.machine

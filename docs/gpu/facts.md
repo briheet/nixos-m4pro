@@ -51,6 +51,32 @@ MHz/mV, table 0: 338/600 618/635 796/685 924/725 952/765 1056/765
 1578/1030 (plus state 0 off). SRAM tables, and `afr`/`cs` tables of 8
 states (24–1470 MHz) in microvolts, are in `nixos-m4pro gpu` output.
 
+## Firmware interface (traced under the hypervisor, macOS 27.2)
+
+`tools/hv/trace_agx_raw.py` (raw capture) and `nixos-m4pro agx …` (offline
+decoding, `lib/agx/`). Traces stay in `build/agx/traces/`.
+
+- Mailbox: RTKit HELLO version 12 on endpoint 0, then endpoint 0x20/0x21
+  as on M1/M2: one `0x81` message (host → firmware) carries the InitData
+  address in bits 47:0, then kicks (`0x83`, `0x84`, `0x87`) on 0x21 and
+  pongs (`0x42`) back on 0x20. 46k messages in the first minute of a
+  macOS boot.
+- GPU address space (UAT): 16 KiB pages, three levels at bits 36/25/14
+  with 64/2048/2048 entries, so 42-bit halves; the kernel half is
+  `0xfffffc0000000000` and up. InitData declares exactly this.
+- Context 0's TTBR1 table is empty: the kernel-half tables live in
+  `gfx-shared-region` (root `0x105fff78000`). Its first-level slots:
+  0 the firmware (`__TEXT` pages), 1 device registers (`gfx-asc`, SGX),
+  2 macOS's GPU allocations (`0xfffffc20…`, in `gfx-shared-l2-region`).
+  The firmware maps GPU registers into its space; reading those pages from
+  the host crashes the machine, so the tracer reads RAM only.
+- InitData (`0xfffffc20000f0000`): same as 13.x up to `0x28`; 13.x's
+  `fw_status_addr` pointer is two u32 (0, 1) in 27.2; the UAT description
+  follows at the same offset; after the padding, 13.x's five u32 are four
+  kernel pointers in 27.2 (`0xa8`–`0xc7`). Schema: `lib/agx/initdata.ml`.
+- Region B starts with the channel table: groups of a ring buffer pointer
+  and three state pointers 16 bytes apart, as in 13.x. Next to fit.
+
 ## Still to collect
 
 - macOS side: `ioreg -l -r -c AGXAccelerator`, `sudo powermetrics

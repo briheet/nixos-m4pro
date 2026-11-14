@@ -1,0 +1,5 @@
+; GPU (AGX) firmware interface: offline snapshots from tools/hv/trace_agx_raw.py,
+; address resolution, exploration, and layout schemas per firmware version.
+(library
+ (name agx)
+ (wrapped true))

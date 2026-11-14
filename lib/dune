@@ -2,4 +2,4 @@
 (library
  (name nixos_m4pro)
  (wrapped true)
- (libraries proto soc nvme boot))
+ (libraries proto soc nvme boot agx))
