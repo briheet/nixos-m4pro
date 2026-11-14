@@ -186,3 +186,32 @@ let nop t =
   if reply.status <> Wire.st_ok then failwith (Printf.sprintf "m1n1 nop status %d" reply.status)
 
 let transport t = Wire.proxy_transport (peer t)
+
+(* REQ_MEMREAD: u64 address and u64 size in the payload; the reply carries
+   the data checksum (same mix as the frames, over the data alone), then the
+   raw bytes follow. Read in chunks so a lost byte costs one chunk. Without
+   features negotiated (see [nop]) data checksums are on and there is no
+   end sentinel. *)
+let memread ?(chunk = 0x10000) t ~addr ~size =
+  let out = Bytes.create size in
+  let rec go off =
+    if off < size then begin
+      let n = min chunk (size - off) in
+      let payload = Bytes.make 16 '\000' in
+      Bytes.set_int64_le payload 0 (Int64.of_int (addr + off));
+      Bytes.set_int64_le payload 8 (Int64.of_int n);
+      let reply = Wire.decode_reply (peer t (Wire.encode_command Wire.req_memread payload)) in
+      if reply.cmd <> Wire.req_memread then
+        failwith (Printf.sprintf "m1n1 memread: got command %#x" reply.cmd);
+      if reply.status <> Wire.st_ok then
+        failwith (Printf.sprintf "m1n1 memread %#x+%#x: status %d" (addr + off) n reply.status);
+      let expected = Wire.get_u32 reply.data 0 in
+      let data = read_exact t n in
+      let got = Wire.checksum data 0 n in
+      if got <> expected then raise (Wire.Checksum_error { expected; got });
+      Bytes.blit data 0 out off n;
+      go (off + n)
+    end
+  in
+  go 0;
+  out

@@ -8,6 +8,8 @@ let usage () =
   prerr_endline "       nixos-m4pro pmgr-list ADT     power domains in an Apple device tree dump";
   prerr_endline "       nixos-m4pro pmgr-dtsi ADT     the kernel's pmgr .dtsi for this machine";
   prerr_endline "       nixos-m4pro gpu ADT           the GPU (AGX) and its firmware, decoded";
+  prerr_endline "       nixos-m4pro power-chain ADT PATH  the PMGR domains a node's clock-gates need, parents first";
+  prerr_endline "       nixos-m4pro gpu-probe [DEV]   live GPU ground truth through m1n1 (build/agx/)";
   prerr_endline "                               DEV defaults to $M1N1DEVICE, then the debug USB channel";
   exit 2
 
@@ -46,6 +48,18 @@ let () =
       Printf.printf "children: %s\n" (String.concat " " (List.map (fun (c : Nixos_m4pro.Adt.node) -> c.name) n.children))
   | [ _; "gpu"; adt ] ->
       print_string (Nixos_m4pro.Gpu_adt.summary (Nixos_m4pro.Gpu_adt.of_adt (Nixos_m4pro.Adt.of_file adt)))
+  | [ _; "gpu-probe" ] -> Nixos_m4pro.Gpu_probe.run ~out_dir:"build/agx" ()
+  | [ _; "gpu-probe"; device ] -> Nixos_m4pro.Gpu_probe.run ~device ~out_dir:"build/agx" ()
+  | [ _; "power-chain"; adt; path ] ->
+      let root = Nixos_m4pro.Adt.of_file adt in
+      let n = Nixos_m4pro.Adt.node_at root path in
+      let gates = match Nixos_m4pro.Adt.prop n "clock-gates" with
+        | Some v -> List.init (String.length v / 4) (fun i -> Nixos_m4pro.Adt.u32_at v (4 * i))
+        | None -> failwith "no clock-gates" in
+      List.iter (fun (d : Nixos_m4pro.Pmgr_adt.domain) ->
+          Printf.printf "%4d %-20s %#x+%#x%s\n" d.id d.name d.base d.offset
+            (if d.critical then " always-on" else ""))
+        (Nixos_m4pro.Pmgr_adt.power_chain root gates)
   | [ _; "pmgr-dtsi"; adt ] ->
       print_string (Nixos_m4pro.Pmgr_adt.dtsi (Nixos_m4pro.Pmgr_adt.domains (Nixos_m4pro.Adt.of_file adt)))
   | [ _; "pmgr-list"; adt ] ->

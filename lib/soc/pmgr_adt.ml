@@ -77,6 +77,41 @@ let domains adt =
            offset;
          })
 
+(* The power-state domains behind a device's "clock-gates", parents first,
+   as m1n1's pmgr_adt_power_enable() walks them: a gate may be a record
+   without a power-state register of its own (flag 0x10), which only stands
+   for its parents. Ids are the low 16 bits of each gate; the die (bits
+   16+) is 0 on this single-die chip. *)
+let power_chain adt gates =
+  let pmgr = Adt.node_at adt path in
+  let devs = Adt.prop_exn pmgr "devices" in
+  let n = String.length devs / record in
+  let rec_ i = String.sub devs (i * record) record in
+  let u8id = u8 (rec_ 0) 3 <> u8 (rec_ 1) 3 in
+  let id_of r = if u8id then u8 r 3 else u16 r 26 in
+  let parents_of r =
+    List.filter (( <> ) 0) (if u8id then [ u8 r 4; u8 r 5 ] else [ u16 r 4; u16 r 6 ])
+  in
+  let records = List.init n rec_ in
+  let find id =
+    match List.find_opt (fun r -> id_of r = id) records with
+    | Some r -> r
+    | None -> failwith (Printf.sprintf "pmgr: no device with id %#x" id)
+  in
+  let by_id = Hashtbl.create 256 in
+  List.iter (fun (d : domain) -> Hashtbl.replace by_id d.id d) (domains adt);
+  let seen = Hashtbl.create 16 and out = ref [] in
+  let rec walk id =
+    if not (Hashtbl.mem seen id) then begin
+      Hashtbl.add seen id ();
+      let r = find id in
+      List.iter walk (parents_of r);
+      match Hashtbl.find_opt by_id id with Some d -> out := d :: !out | None -> ()
+    end
+  in
+  List.iter (fun g -> walk (g land 0xffff)) gates;
+  List.rev !out
+
 (* CPU cluster and core domains (ecpu_N, pcpuN_M, ecpm, pcpmN) are handled
    by the hardware and m1n1's cpufreq setup. Asahi's pmgr files leave them
    out, so Linux never gates a CPU; so does [dtsi]. *)
