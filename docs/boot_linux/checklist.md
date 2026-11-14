@@ -35,7 +35,7 @@ Each item has a check that marks it done. Items are ticked only after the check 
 
 - [x] **8. Kernel banner.** Command line: `earlycon console=ttyDC0 rdinit=/init maxcpus=1 cpuidle.off=1 clk_ignore_unused pd_ignore_unused`.
   Check: `Linux version` appears on the debug USB console.
-  Result: `Linux version 7.2.15-m4pro`, `Machine model: Apple MacBook Pro (14-inch, M4 Pro, 2024)`, `earlycon: dockchannel0 at MMIO 0x50882c000`. Two things were in the way. uart0 is not routed to the host, so the console is a new polled driver for the dockchannel UART (`ttyDC0`). m1n1's `kboot_boot` programs the `dart-pmp` DAPF at `0x500578000`, which raises an SError on this chip; `tools/tether-boot.py` renames that node in m1n1's in-memory ADT so DAPF init skips it. Full log: `first-boot.log`.
+  Result: `Linux version 7.2.15-m4pro`, `Machine model: Apple MacBook Pro (14-inch, M4 Pro, 2024)`, `earlycon: dockchannel0 at MMIO 0x50882c000`. Two things were in the way. uart0 is not routed to the host, so the console is a new polled driver for the dockchannel UART (`ttyDC0`). m1n1's `kboot_boot` programs the `dart-pmp` DAPF at `0x500578000`, which raises an SError on this chip; `tools/tether-boot.py` renames that node in m1n1's in-memory ADT so DAPF init skips it.
 - [x] **9. Interrupts and timer.** AIC v3 probes and the timer ticks.
   Check: `/proc/interrupts` counts rise, `sleep 1` returns after a second.
   Result: `irq_apple_aic: Initialized with 2720/4096 IRQs * 1/2 die(s), 7 FIQs, 32 vIPIs`; `arch_timer: cp15 timer running at 1000.00MHz`. `time sleep 1` is `real 0m 1.00s`, and the `arch_timer` count rose from 14362 to 14468 across it.

@@ -60,7 +60,7 @@ Run everything below with `just`, from `nix develop` or `nix shell nixpkgs#just`
    just flash       # partition, format, install
    ```
    `partition` saves the GPT to `/root/gpt-before.bin` before changing it, and only adds partitions 4 and 5 in the free block between the macOS container and recoveryOS. The install writes stage 2 (m1n1 + device tree + U-Boot) to the ESP.
-6. **Boot it:** power on, or `tools/m4reboot`. U-Boot boots the newest generation after 5 s (about 90 s to the login screen).
+6. **Boot it:** power on, or `tools/m4reboot`. U-Boot boots the newest generation after 5 s (about 25 s from iBoot to the login screen).
 7. **Your password**, from the host (it prompts there; only the hash goes to the Mac):
    ```
    just set-password briheet

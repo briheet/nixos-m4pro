@@ -14,7 +14,7 @@ power on
                       └─ Linux + initrd    root on nvme0n1p5
 ```
 
-Only stage 1 needs a trip to recoveryOS; each switch puts the matching one on the ESP with `m1n1/stage1-install.sh` for that trip, and `m1n1-status` shows which stage 1 booted (README, Boot chain updates). Stage 2, U-Boot and the menu sit on the ESP; `nixos/m1n1-boot.nix` writes stage 2 with the boot loader, so `nixos-rebuild` (or `just flash-system`) updates them with each generation. From power-on to the login prompt takes about 90 s.
+Only stage 1 needs a trip to recoveryOS; each switch puts the matching one on the ESP with `m1n1/stage1-install.sh` for that trip, and `m1n1-status` shows which stage 1 booted (README, Boot chain updates). Stage 2, U-Boot and the menu sit on the ESP; `nixos/m1n1-boot.nix` writes stage 2 with the boot loader, so `nixos-rebuild` (or `just flash-system`) updates them with each generation. From iBoot to the login prompt takes about 25 s (a reboot on 2026-11-13): iBoot to stage 1 3 s, stage 1 (NVMe up, chainload) 1.6 s, stage 2 m1n1 2.9 s, U-Boot 0.4 s, the extlinux menu 5 s, Linux to the login prompt 9 s.
 
 ## Status
 
