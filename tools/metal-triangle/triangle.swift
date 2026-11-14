@@ -14,7 +14,7 @@
 // After the last frame it holds its GPU objects for --hold seconds before
 // exiting (macOS frees them at exit), so a snapshot can still find them.
 //
-//   metal-triangle [--frames N] [--delay SECONDS] [--gap SECONDS] [--hold SECONDS]
+//   metal-triangle [--frames N] [--delay SECONDS] [--gap SECONDS] [--hold SECONDS] [--busy]
 //
 // Build on a Mac: swiftc -O triangle.swift -o metal-triangle
 
@@ -77,6 +77,10 @@ let vbuf = device.makeBuffer(bytes: verts, length: verts.count * 4, options: .st
 vbuf.label = "nixos-m4pro triangle vertices"
 let readback = device.makeBuffer(length: size * size * 4, options: .storageModeShared)!
 let queue = device.makeCommandQueue()!
+// Colour for --busy frames, with its own marker word (0xc0ffeeb0).
+let busyWords: [UInt32] = [0x3e800000, 0x3f000000, 0x3f400000, 0x3f800000, 0xc0ffeeb0]
+let busyColour = device.makeBuffer(bytes: busyWords, length: busyWords.count * 4, options: .storageModeShared)!
+busyColour.label = "nixos-m4pro triangle busy colour"
 queue.label = "nixos-m4pro triangle queue"
 
 stamp("ready; first frame in \(delay) s")
@@ -123,7 +127,40 @@ for frame in 0..<frames {
     if frame + 1 < frames { Thread.sleep(forTimeInterval: gap) }
 }
 // Expected: centre ~ 191 128 64 255 (the triangle), corner ~ 96 64 32 255 (the clear colour).
-stamp("finished; holding the GPU objects for \(hold) s")
-Thread.sleep(forTimeInterval: hold)
-withExtendedLifetime((vbuf, readback, target, pipeline, queue)) {}
+// --busy: keep drawing through the hold. Metal makes resources resident in
+// the GPU's page tables only while command buffers using them are in
+// flight; an idle hold left nothing mapped for a snapshot to find.
+let busy = CommandLine.arguments.contains("--busy")
+if busy {
+    stamp("finished; drawing continuously for \(hold) s (--busy)")
+    let end = Date().addingTimeInterval(hold)
+    var n = 0
+    var last: MTLCommandBuffer? = nil
+    while Date() < end {
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = target
+        pass.colorAttachments[0].loadAction = .clear
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 0.125, green: 0.25, blue: 0.375, alpha: 1)
+        pass.colorAttachments[0].storeAction = .store
+        let cmd = queue.makeCommandBuffer()!
+        cmd.label = "nixos-m4pro triangle busy"
+        let enc = cmd.makeRenderCommandEncoder(descriptor: pass)!
+        enc.setRenderPipelineState(pipeline)
+        enc.setVertexBuffer(vbuf, offset: 0, index: 0)
+        enc.setFragmentBuffer(busyColour, offset: 0, index: 0)
+        for _ in 0..<64 { enc.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3) }
+        enc.endEncoding()
+        cmd.commit()
+        n += 1
+        // Keep a few frames in flight, never an unbounded queue.
+        if n % 4 == 0 { last?.waitUntilCompleted() }
+        last = cmd
+    }
+    last?.waitUntilCompleted()
+    stamp("busy: \(n) command buffers")
+} else {
+    stamp("finished; holding the GPU objects for \(hold) s")
+    Thread.sleep(forTimeInterval: hold)
+}
+withExtendedLifetime((vbuf, readback, target, pipeline, queue, busyColour)) {}
 stamp("exiting")
