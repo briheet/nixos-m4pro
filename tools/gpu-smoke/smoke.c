@@ -8,12 +8,16 @@
 //   buffer, which is mapped back and checked.
 // Exit 0 = both ran on the GPU.
 //
-// Run with Aurora's Mesa (see default.nix): ./result/bin/gpu-smoke
+// With ITERATIONS, both run that many times with changing values, each result
+// checked; SLEEP_MS between iterations lets the GPU power off and wake up.
+//
+// Run with Aurora's Mesa (see default.nix): ./result/bin/gpu-smoke [ITERATIONS [SLEEP_MS]]
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl31.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 #define W 64
 #define H 64
@@ -34,8 +38,10 @@ static GLuint shader(GLenum type, const char *src)
 	return s;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
+	int iterations = argc > 1 ? atoi(argv[1]) : 1;
+	int sleep_ms = argc > 2 ? atoi(argv[2]) : 0;
 	PFNEGLGETPLATFORMDISPLAYEXTPROC get_display =
 		(void *)eglGetProcAddress("eglGetPlatformDisplayEXT");
 	EGLDisplay dpy = get_display(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
@@ -82,24 +88,14 @@ int main(void)
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, tri);
 	glEnableVertexAttribArray(0);
 
-	glClearColor(1.0f, 0.0f, 0.0f, 1.0f);
-	glClear(GL_COLOR_BUFFER_BIT);
-	glDrawArrays(GL_TRIANGLES, 0, 3);
-	glFinish();
-
-	static unsigned char px[W * H * 4];
-	glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, px);
-	unsigned char *corner = &px[0], *centre = &px[((H / 2) * W + W / 2) * 4];
-	printf("corner %02x%02x%02x%02x (want ff0000ff), centre %02x%02x%02x%02x (want 00ff00ff)\n",
-	       corner[0], corner[1], corner[2], corner[3], centre[0], centre[1], centre[2], centre[3]);
-	int render_ok = corner[0] == 0xff && corner[1] == 0 && centre[0] == 0 && centre[1] == 0xff;
-	printf("render %s\n", render_ok ? "PASS" : "FAIL");
+	GLuint prog_render = prog;
 
 	GLuint cs = shader(GL_COMPUTE_SHADER,
 		"#version 310 es\n"
 		"layout(local_size_x = 64) in;\n"
 		"layout(std430, binding = 0) buffer B { uint v[]; };\n"
-		"void main() { uint i = gl_GlobalInvocationID.x; v[i] = i * 3u + 7u; }\n");
+		"uniform uint base;\n"
+		"void main() { uint i = gl_GlobalInvocationID.x; v[i] = i * 3u + base; }\n");
 	GLuint cprog = glCreateProgram();
 	glAttachShader(cprog, cs);
 	glLinkProgram(cprog);
@@ -109,24 +105,58 @@ int main(void)
 		fprintf(stderr, "compute program did not link\n");
 		return 2;
 	}
+	GLint base_loc = glGetUniformLocation(cprog, "base");
 	GLuint buf;
 	glGenBuffers(1, &buf);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, buf);
 	static GLuint zero[64];
 	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof zero, zero, GL_DYNAMIC_READ);
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buf);
-	glUseProgram(cprog);
-	glDispatchCompute(1, 1, 1);
-	glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
-	glFinish();
-	const GLuint *out = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof zero, GL_MAP_READ_BIT);
-	int compute_ok = out != NULL;
-	for (int i = 0; compute_ok && i < 64; i++)
-		compute_ok = out[i] == (GLuint)i * 3 + 7;
-	printf("compute v[0..3] = %u %u %u %u (want 7 10 13 16), v[63] = %u (want 196)\n",
-	       out ? out[0] : 0, out ? out[1] : 0, out ? out[2] : 0, out ? out[3] : 0, out ? out[63] : 0);
-	printf("compute %s\n", compute_ok ? "PASS" : "FAIL");
-	int ok = render_ok && compute_ok;
-	printf("%s\n", ok ? "PASS" : "FAIL");
+
+	int render_fail = 0, compute_fail = 0;
+	static unsigned char px[W * H * 4];
+	for (int it = 0; it < iterations; it++) {
+		/* Render: a clear whose red level changes, then the green triangle. */
+		unsigned red = 0x40 + it % 0xc0;
+		glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+		glUseProgram(prog_render);
+		glClearColor(red / 255.0f, 0.0f, 0.0f, 1.0f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glDrawArrays(GL_TRIANGLES, 0, 3);
+		glReadPixels(0, 0, W, H, GL_RGBA, GL_UNSIGNED_BYTE, px);
+		unsigned char *corner = &px[0], *centre = &px[((H / 2) * W + W / 2) * 4];
+		int rok = abs((int)corner[0] - (int)red) <= 1 && corner[1] == 0 && centre[0] == 0 &&
+			  centre[1] == 0xff;
+		if (!rok && render_fail++ < 5)
+			printf("iteration %d: render corner %02x%02x%02x%02x (want %02x0000ff), centre %02x%02x%02x%02x\n",
+			       it, corner[0], corner[1], corner[2], corner[3], red, centre[0], centre[1], centre[2],
+			       centre[3]);
+
+		/* Compute: v[i] = i * 3 + it. */
+		glUseProgram(cprog);
+		glUniform1ui(base_loc, (GLuint)it);
+		glDispatchCompute(1, 1, 1);
+		glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+		const GLuint *out = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, sizeof zero, GL_MAP_READ_BIT);
+		int cok = out != NULL;
+		for (int i = 0; cok && i < 64; i++)
+			cok = out[i] == (GLuint)i * 3 + (GLuint)it;
+		if (!cok && compute_fail++ < 5)
+			printf("iteration %d: compute v[0] = %u v[63] = %u (want %u, %u)\n", it, out ? out[0] : 0,
+			       out ? out[63] : 0, (unsigned)it, 189u + it);
+		glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+		if (iterations == 1) {
+			printf("corner %02x%02x%02x%02x (want %02x0000ff), centre %02x%02x%02x%02x (want 00ff00ff)\n",
+			       corner[0], corner[1], corner[2], corner[3], red, centre[0], centre[1], centre[2], centre[3]);
+			printf("render %s\ncompute %s\n", rok ? "PASS" : "FAIL", cok ? "PASS" : "FAIL");
+		}
+		if (sleep_ms) {
+			struct timespec ts = { sleep_ms / 1000, (sleep_ms % 1000) * 1000000L };
+			nanosleep(&ts, NULL);
+		}
+	}
+	int ok = !render_fail && !compute_fail;
+	printf("%d iterations: %d render failures, %d compute failures: %s\n", iterations, render_fail,
+	       compute_fail, ok ? "PASS" : "FAIL");
 	return ok ? 0 : 1;
 }
