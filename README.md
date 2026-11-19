@@ -1,6 +1,6 @@
 # nixos-m4pro
 
-NixOS on a 14-inch MacBook Pro with the M4 Pro (`Mac16,8`, board `J614s`, SoC `T6040`), which the Asahi installer does not support yet. Personal use: the patches here are written for this machine, not for upstream.
+NixOS on a 14-inch MacBook Pro with the M4 Pro (`Mac16,8`, board `J614s`, SoC `T6040`), which the Asahi installer does not support yet. Personal use: the patches here are written for this machine, not for upstream
 
 NixOS runs from the internal SSD and boots from power-on without the host: m1n1 → U-Boot → extlinux menu → NixOS ([docs/boot_linux/boot-chain.md](docs/boot_linux/boot-chain.md)). Working: all 12 CPUs (idling in WFI), the internal screen (boot framebuffer), keyboard, multitouch trackpad, SSD, Wi-Fi, Bluetooth, battery and charger, power button and lid, real-time clock, clean reboot, and a Hyprland desktop. [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md) tracks every piece of hardware.
 
