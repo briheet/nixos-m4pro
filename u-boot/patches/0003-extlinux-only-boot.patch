@@ -1,0 +1,21 @@
+From: nixos-m4pro
+Subject: [PATCH] apple: boot NixOS from extlinux without the EFI attempts
+
+The default environment defines aurora_boot, so board_late_init keeps it:
+only the extlinux boot method, no BOOTAA64.EFI load and no EFI boot
+manager, whose failures were printed on every boot once quiet boot was off.
+---
+--- a/board/apple/mac/mac.env	2026-11-14 14:38:29.242190715 +0530
++++ b/board/apple/mac/mac.env	2026-11-14 14:38:29.246936552 +0530
+@@ -2,3 +2,11 @@
+ stdout=vidconsole,serial
+ stderr=vidconsole,serial
+ boot_targets=nvme usb
++
++/*
++ * nixos-m4pro boots NixOS from the extlinux menu on the ESP and has no EFI
++ * loader there: go straight to extlinux instead of aurora's EFI attempts
++ * (BOOTAA64.EFI, then the EFI boot manager), which only print failures.
++ */
++bootmeths=extlinux
++aurora_boot=bootflow scan -b; echo Nothing could be booted. Use the serial console or reset.

@@ -1,0 +1,66 @@
+From bb0108f68948ac6950d80a7e32f2a3745d853b38 Mon Sep 17 00:00:00 2001
+From: nixos-m4pro <local@local>
+Date: Fri, 13 Nov 2026 02:01:41 +0530
+Subject: [PATCH 2/3] kboot: Reserve both CTRR ranges left locked on secondary
+ cores
+
+On T6040 the C and D CTRR instances are both enabled and locked on every
+core except the boot core (CTL 0x8000000000000001 there, 0 on the boot
+core). Only C was reserved. D, about 1 MiB just below m1n1, reached
+Linux's allocator, and the first secondary core to write to a page there
+took a permission fault while unpacking the initramfs.
+
+Reserve every enabled range, treating the upper bound as the last
+protected page.
+---
+ src/kboot.c | 34 ++++++++++++++++++++++++----------
+ 1 file changed, 24 insertions(+), 10 deletions(-)
+
+diff --git a/src/kboot.c b/src/kboot.c
+index b3c91898..88792300 100644
+--- a/src/kboot.c
++++ b/src/kboot.c
+@@ -3011,16 +3011,30 @@ int kboot_prepare_dt(void *fdt)
+         bail("FDT: couldn't add reservation for m1n1\n");
+ 
+     if (!cpu_features->apple_sysregs_unlocked) {
+-        // On M4* / A18 Pro / M5*, there is a CTRR instance left enabled only
+-        // on the secondary (non-boot) cores. Add a reserved-memory region to
+-        // prevent Linux from crashing when allocating this memory and writing
+-        // to it from a secondary core.
+-        u64 ro_start = mrs(SYS_IMP_APL_CTRR_C_LWR_EL1);
+-        u64 ro_end = ALIGN_UP(mrs(SYS_IMP_APL_CTRR_C_UPR_EL1), SZ_4K);
+-        if (ro_end - ro_start > 12 * SZ_4K)
+-            printf("WARNING: M4+ SMP-RO is large (48KB)");
+-        if (fdt_add_mem_rsv(dt, ro_start, ro_end - ro_start))
+-            bail("FDT: couldn't add reservation for M4+ SMP-RO CTRR area\n");
++        // On M4* / A18 Pro / M5*, CTRR instances are left enabled and locked
++        // on the secondary (non-boot) cores. Reserve every range they cover,
++        // or Linux allocates that memory and the first write to it from a
++        // secondary core faults. On T6040 both the C and D instances are
++        // enabled there (CTL 0x8000000000000001 on the secondaries, 0 on the
++        // boot core); D is about 1 MiB just below m1n1. The upper bound is
++        // the last protected page, so the range ends one page after it.
++        const struct {
++            const char *name;
++            u64 lwr, upr;
++        } ranges[] = {
++            {"C", mrs(SYS_IMP_APL_CTRR_C_LWR_EL1), mrs(SYS_IMP_APL_CTRR_C_UPR_EL1)},
++            {"D", mrs(SYS_IMP_APL_CTRR_D_LWR_EL1), mrs(SYS_IMP_APL_CTRR_D_UPR_EL1)},
++        };
++        for (size_t i = 0; i < ARRAY_SIZE(ranges); i++) {
++            if (!ranges[i].lwr || ranges[i].upr < ranges[i].lwr)
++                continue;
++            u64 ro_start = ALIGN_DOWN(ranges[i].lwr, SZ_4K);
++            u64 ro_end = ALIGN_UP(ranges[i].upr + 1, SZ_4K);
++            printf("FDT: reserving CTRR %s [0x%lx, 0x%lx), locked on secondary cores\n",
++                   ranges[i].name, ro_start, ro_end);
++            if (fdt_add_mem_rsv(dt, ro_start, ro_end - ro_start))
++                bail("FDT: couldn't add reservation for CTRR %s\n", ranges[i].name);
++        }
+     }
+ 
+     /* setup console log buffer early to capture as much log as possible */
+-- 
+2.56.0
+

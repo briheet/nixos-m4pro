@@ -1,0 +1,22 @@
+#!/bin/sh
+# Set AUTO_ENABLE (bit 28) on PMGR domains one at a time from the running
+# M4 Pro's shell, the write apple_pmgr_ps_probe makes on every domain that
+# is already on, and stop at the first one after which the machine stops
+# answering. Boot with initcall_blacklist=apple_pmgr_ps_driver_init so the
+# driver itself writes nothing.
+#   tools/pd-auto name [name ...]
+# Domains that are not on are skipped, as the driver does.
+cd "$(dirname "$0")/.." || exit 1
+for n in "$@"; do
+  a=$(awk -v n="$n" '$2 == n { split($3, p, "+"); printf "0x%x", strtonum(p[1]) + strtonum(p[2]) }' build/pmgr-list.txt)
+  [ -n "$a" ] || { echo "pd-auto: unknown domain $n"; exit 2; }
+  r=$(tools/m4sh "v=\$(devmem $a 32); [ \$(( (v >> 4) & 15 )) -eq 15 ] && devmem $a 32 \$(( (v & ~0x300) | 0x10000000 )) && echo set || echo skip" 1)
+  case "$r" in
+    *set*) ;;
+    *skip*) continue ;;
+    *) echo "pd-auto: no answer after $n ($a)" | tee -a build/pd-results.txt; exit 1 ;;
+  esac
+  ok=$(tools/m4sh 'echo alive' 1)
+  [ -n "$ok" ] || { echo "pd-auto: died after setting AUTO_ENABLE on $n ($a)" | tee -a build/pd-results.txt; exit 1; }
+done
+echo "pd-auto: all set, still alive" | tee -a build/pd-results.txt

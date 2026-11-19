@@ -653,4 +653,206 @@ let () =
       output_string oc (M1n1_image.needle ());
       close_out oc;
       check "image offset" (M1n1_image.find_offset image = Some 16));
+
+  (* Serial reader on a socketpair. The far end has already queued what a
+     live m1n1 line can carry ahead of a reply: console text, a lone ff, an
+     ff 55 that is not a header, an event, and a stale boot reply. *)
+  let near, far = Unix.socketpair Unix.PF_UNIX Unix.SOCK_STREAM 0 in
+  let console = Buffer.create 32 in
+  let serial = Serial.of_fd ~timeout:1.0 ~console:(Buffer.add_string console) near in
+  let send s = ignore (Unix.write_substring far s 0 (String.length s)) in
+  let reply_data = Bytes.make Wire.reply_data_len '\000' in
+  Proxy.put_u64 reply_data 0 Proxy.p_get_chipid;
+  Proxy.put_u64 reply_data 16 0x6040L;
+  let event =
+    let b = Bytes.make (8 + 3 + 4) '\000' in
+    Wire.put_u32 b 0 Wire.req_event;
+    Bytes.set b 4 '\003';
+    Bytes.blit_string "evt" 0 b 8 3;
+    Bytes.to_string b
+  in
+  send "hello\n\xffx\xff\x55y";
+  send event;
+  send (Bytes.to_string (Wire.encode_reply Wire.req_boot Wire.st_ok Bytes.empty));
+  send (Bytes.to_string (Wire.encode_reply Wire.req_proxy Wire.st_ok reply_data));
+  let chip = Proxy.call (Serial.transport serial) Proxy.p_get_chipid [] in
+  check "serial chip id" (chip = 0x6040L);
+  check "serial console" (Buffer.contents console = "hello\n\xffx\xff\x55y");
+  let sent = Bytes.create Wire.command_len in
+  ignore (Unix.read far sent 0 Wire.command_len);
+  let command = Wire.parse_command sent in
+  check "serial request framing"
+    (command.cmd = Wire.req_proxy && command.checksum_ok
+    && Proxy.get_u64 command.payload 0 = Proxy.p_get_chipid);
+  (try
+     ignore (Proxy.call (Serial.transport serial) Proxy.p_get_chipid []);
+     fail "serial read without a reply should time out"
+   with Serial.Timeout _ -> ());
+  (* A line that never goes quiet but never carries a reply still times out. *)
+  let chatter = Thread.create (fun () ->
+      let stop = Unix.gettimeofday () +. 3.0 in
+      try
+        while Unix.gettimeofday () < stop do
+          ignore (Unix.write_substring far "TTY spam\n" 0 9);
+          Thread.delay 0.05
+        done
+      with Unix.Unix_error _ -> ()) ()
+  in
+  let started = Unix.gettimeofday () in
+  (try
+     ignore (Proxy.call (Serial.transport serial) Proxy.p_get_chipid []);
+     fail "serial read with only console text should time out"
+   with Serial.Timeout _ -> ());
+  check "serial overall deadline" (Unix.gettimeofday () -. started < 2.0);
+  Thread.join chatter;
+  Unix.close far;
+  Serial.close serial;
+
+  (* Probe on the loopback. It must read, and nothing it does may write. *)
+  let board = Loopback.create () in
+  let transport = Wire.proxy_transport (Loopback.handle board) in
+  Proxy.write32 transport (Int64.add Aic.base (Int64.of_int Aic.cap0_offset)) Loopback.aic_cap0;
+  Proxy.write32 transport (Int64.add Aic.base (Int64.of_int Aic.maxnumirq_offset)) Loopback.aic_maxnumirq;
+  let writes = ref 0 in
+  let counting request =
+    let opcode = Proxy.get_u64 request 0 in
+    if opcode = Proxy.p_write32 || opcode = Proxy.p_write64 || opcode = Proxy.p_mask32 then incr writes;
+    transport request
+  in
+  let report = Probe.probe counting ~device:"loopback" in
+  check "probe chip id" (report.chip_id = 0x6040L);
+  check "probe base" (report.base = Loopback.m1n1_base);
+  check "probe no writes" (!writes = 0);
+  check "probe all read" (List.for_all (fun (r : Probe.reading) -> r.value <> None) report.readings);
+  (match report.aic with
+  | Ok l -> check "probe aic" (l.nr_die = 1 && l.max_die = 2 && l.nr_irq = 2720 && l.max_irq = 4096)
+  | Error msg -> fail ("probe aic: " ^ msg));
+
+  (* Live.power_aic refuses a domain that is not already active, and on an
+     active one it leaves the state as it was. *)
+  let board = Loopback.create () in
+  let transport = Wire.proxy_transport (Loopback.handle board) in
+  (try
+     ignore (Live.power_aic transport);
+     fail "power_aic changed a domain that was not active"
+   with Failure message -> check "live refuses" (String.ends_with ~suffix:"refusing to change it" message));
+  List.iter
+    (fun (d : Pmgr.domain) -> Proxy.write32 transport (Pmgr.at d.offset) 0x000000ffL)
+    [ Pmgr.ps_pms; Pmgr.ps_aic ];
+  let steps = Live.power_aic transport in
+  check "live no-op" (List.for_all (fun (s : Live.step) -> s.before = s.after && s.after = 0xffL) steps);
+
+  (* Live.disable_wdt refuses an armed watchdog and is a no-op on a
+     disabled one. *)
+  Proxy.write32 transport (Wdt.reg Wdt.ctl) Wdt.reboot_ctl;
+  (try
+     ignore (Live.disable_wdt transport);
+     fail "disable_wdt changed an armed watchdog"
+   with Failure message -> check "wdt refuses" (String.ends_with ~suffix:"refusing to change it" message));
+  check "wdt left armed" (Proxy.read32 transport (Wdt.reg Wdt.ctl) = Wdt.reboot_ctl);
+  Proxy.write32 transport (Wdt.reg Wdt.ctl) 0L;
+  let steps = Live.disable_wdt transport in
+  check "wdt no-op" (List.for_all (fun (s : Live.step) -> s.before = 0L && s.after = 0L) steps);
+
+  (* Live.aic_init sets the target nibble and keeps the rest of the word. *)
+  Proxy.write32 transport (Int64.add Aic.base (Int64.of_int Aic.cap0_offset)) Loopback.aic_cap0;
+  Proxy.write32 transport (Int64.add Aic.base (Int64.of_int Aic.maxnumirq_offset)) Loopback.aic_maxnumirq;
+  let cfg = Int64.add Aic.base (Int64.of_int (Aic.extint_base + (4 * 0x1ad))) in
+  Proxy.write32 transport cfg 0xa0L;
+  let _, cfg_steps = Live.aic_init transport in
+  check "aic init changes target"
+    (match cfg_steps with
+    | [ s ] -> s.irq = 0x1ad && s.addr = 0x5024106b4L && s.cfg_before = 0xa0L && s.cfg_after = 0xa3L
+    | _ -> false);
+  (* Pmgr.apcie0_power is parents first, and Live.power_apcie0 powers only
+     what is off. *)
+  let position id =
+    let rec go i = function
+      | [] -> fail (Printf.sprintf "pmgr id %d missing" id)
+      | (ps : Pmgr.ps) :: rest -> if ps.id = id then i else go (i + 1) rest
+    in
+    go 0 Pmgr.apcie0_power
+  in
+  check "apcie0 parents first"
+    (List.for_all
+       (fun (ps : Pmgr.ps) -> List.for_all (fun par -> position par < position ps.id) ps.parents)
+       Pmgr.apcie0_power);
+  check "apcie0 gates listed" (List.for_all (fun id -> position id >= 0) Pmgr.apcie0_clock_gates);
+  Proxy.write32 transport 0x502280100L 0xffL;
+  let masked = ref [] in
+  let tracking request =
+    if Proxy.get_u64 request 0 = Proxy.p_mask32 then masked := Proxy.get_u64 request 8 :: !masked;
+    transport request
+  in
+  let ps_steps = Live.power_apcie0 tracking in
+  check "apcie0 all active"
+    (List.for_all (fun (s : Live.ps_step) -> Live.actual s.ps_after = Pmgr.ps_active) ps_steps);
+  check "apcie0 skips active" (not (List.mem 0x502280100L !masked));
+  check "apcie0 write order"
+    (List.rev !masked
+    = List.filter_map
+        (fun (ps : Pmgr.ps) -> if ps.addr = 0x502280100L then None else Some ps.addr)
+        Pmgr.apcie0_power);
+  let _, again = Live.aic_init transport in
+  check "aic init repeat is a no-op"
+    (List.for_all (fun (s : Live.cfg_step) -> s.cfg_before = 0xa3L && s.cfg_after = 0xa3L) again);
+  (* AGX schemas: InitData is 0xbc bytes on 13.x firmware (m1n1's
+     initdata.py) and 0xc8 on 27.2 (traced 2026-11-14). *)
+  let module S = Nixos_m4pro.Agx.Schema in
+  ignore Nixos_m4pro.Agx.Initdata.levels;
+  check "InitData 13.5 size" (S.size [ 13; 5 ] (S.Struct "InitData") = 0xbc);
+  check "InitData 27.2 size" (S.size [ 27; 2 ] (S.Struct "InitData") = 0xc8);
+  check "UatLevelInfo size" (S.size [ 27; 2 ] (S.Struct "UatLevelInfo") = 0x20);
+  check "uat_page_size offset 27.2"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "uat_page_size" && o = 0x30) (S.layout [ 27; 2 ] "InitData"));
+  ignore Nixos_m4pro.Agx.Regionb.queue_channels;
+  ignore Nixos_m4pro.Agx.Cmdqueue.show;
+  check "ChannelInfoSet 13.x" (S.size [ 13; 5 ] (S.Struct "ChannelInfoSet") = 0x110);
+  check "ChannelState 13.x" (S.size [ 13; 5 ] (S.Struct "ChannelState") = 0x30);
+  check "ChannelState 27.2" (S.size [ 27; 2 ] (S.Struct "ChannelState") = 0x30);
+  check "RegionB 27.2 queues end at 0x1c0"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "event" && o = 0x1c0) (S.layout [ 27; 2 ] "RegionB"));
+  check "CommandQueuePointers 27.2 rb_size at 0x60"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "rb_size" && o = 0x60) (S.layout [ 27; 2 ] "CommandQueuePointers"));
+  check "CommandQueuePointers 13.5 rb_size at 0x50"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "rb_size" && o = 0x50) (S.layout [ 13; 5 ] "CommandQueuePointers"));
+  check "KickCmd27 reads 0x86" (S.size [ 27; 2 ] (S.Struct "KickCmd27") = 0x86);
+  check "KickRelease27" (S.size [ 27; 2 ] (S.Struct "KickRelease27") = 0x12);
+  check "Barrier27" (S.size [ 27; 2 ] (S.Struct "Barrier27") = 0x48);
+  ignore Nixos_m4pro.Agx.Regions27.names;
+  let at27 st name o = List.exists (fun (o', (fl : S.field)) -> fl.name = name && o = o') (S.layout [ 27; 2 ] st) in
+  check "RegionC27" (S.size [ 27; 2 ] (S.Struct "RegionC27") = 0xe59 && at27 "RegionC27" "perf_period" 0x7c8
+    && at27 "RegionC27" "idle_ts" 0x98c && at27 "RegionC27" "unk_9e4" 0x9e4 && at27 "RegionC27" "override_mask" 0xa04
+    && at27 "RegionC27" "unk_e3d" 0xe3d && at27 "RegionC27" "unk_e55" 0xe55 && at27 "RegionC27" "unk_5e" 0x5e);
+  check "PowerMgmt27" (S.size [ 27; 2 ] (S.Struct "PowerMgmt27") = 0x700 && at27 "PowerMgmt27" "ppm_apply" 0x128
+    && at27 "PowerMgmt27" "thermal_apply" 0xc4 && at27 "PowerMgmt27" "host_inhibit" 0x544
+    && at27 "PowerMgmt27" "reg_override_mask" 0x644 && at27 "PowerMgmt27" "slots" 0x6a8 && at27 "PowerMgmt27" "state_bits" 0x5c4);
+  check "FwStatus27" (S.size [ 27; 2 ] (S.Struct "FwStatus27") = 0x2c0 && at27 "FwStatus27" "fw_log" 0x80
+    && at27 "FwStatus27" "ktrace" 0x240 && at27 "FwStatus27" "stats" 0x280);
+  check "RegionB 27.2 aux" (at27 "RegionB" "fw_log_buf" 0x200 && at27 "RegionB" "fw_log_enable" 0x250
+    && at27 "RegionB" "power_obj" 0x26c && S.size [ 27; 2 ] (S.Struct "RegionB") = 0x27c);
+  check "KickState27" (S.size [ 27; 2 ] (S.Struct "KickState27") = 0xe740 && at27 "KickState27" "slots" 0x4060
+    && at27 "KickState27" "stamp_log" 0x4298 && at27 "KickState27" "idle_handshake" 0x4ae0
+    && at27 "KickState27" "event_counter" 0x4b00 && at27 "KickState27" "unk_c914" 0xc914 && at27 "KickState27" "host_e714" 0xe714);
+  check "RunCmdQueueMsg 27.2" (S.size [ 27; 2 ] (S.Struct "RunCmdQueueMsg27") = 0x18);
+  check "CommandQueueInfo 27.2" (S.size [ 27; 2 ] (S.Struct "CommandQueueInfo27") = 0x80);
+  check "JobList" (S.size [ 27; 2 ] (S.Struct "JobList") = 0x18);
+  ignore Nixos_m4pro.Agx.Hwdata.region_names;
+  check "IOMapping 27.2" (S.size [ 27; 2 ] (S.Struct "IOMapping27") = 0x28);
+  check "HwDataB 27.2 io_mappings end at 0xfa0"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "sgx_sram_ptr" && o = 0xfa0) (S.layout [ 27; 2 ] "HwDataB27"));
+  check "HwDataB 27.2 base_clock_khz at 0xfec"
+    (List.exists (fun (o, (fl : S.field)) -> fl.name = "base_clock_khz" && o = 0xfec) (S.layout [ 27; 2 ] "HwDataB27"));
+  let at name o = List.exists (fun (o', (fl : S.field)) -> fl.name = name && o = o') (S.layout [ 27; 2 ] "HwDataB27") in
+  check "HwDataB 27.2 anchors"
+    (at "num_frags" 0x10a4 && at "gpu_core" 0x10d4 && at "frequencies" 0x10e4 && at "voltages_sram" 0x1524
+     && at "frequencies_alt" 0x1924 && at "pstate_map" 0x1ae4 && at "afr_pstate_limit" 0x1cac
+     && at "afr_frequencies" 0x1cb4 && at "max_pstate_alt" 0x1df4 && at "pad_2638" 0x2638
+     && at "unk_ae4" 0x2664 && at "unk_b38" 0x26d8 && at "gin1114_swwa" 0x2710
+     && at "sched_pause_timeout_us" 0x271c && at "hw_rings" 0x2740 && at "counter_ctl" 0x27d8
+     && at "unk_27e8" 0x27e8 && at "hrb_mode" 0x283e && at "unk_2846" 0x2846);
+  check "HwDataB 27.2 head" (at "timestamp_region_base" 0x28 && at "yuv_matrices" 0x50 && at "io_mappings" 0x640);
+  check "RegionA entry" (S.size [ 27; 2 ] (S.Struct "RegionAEntry27") = 0x18);
+  check "HwDataB 27.2 size" (S.size [ 27; 2 ] (S.Struct "HwDataB27") = 0x2850);
+  check "version gates" (S.present [ 27; 2 ] (S.Since "27") && not (S.present [ 13; 5 ] (S.Since "27")));
   print_endline "ok"

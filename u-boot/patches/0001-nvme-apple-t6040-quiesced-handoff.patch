@@ -1,0 +1,51 @@
+From: nixos-m4pro
+Subject: [PATCH] nvme: apple: T6040: wake a quiesced ANS, hand it on quiesced
+
+The nixos-m4pro boot chain hands ANS over quiesced (m1n1 patch 0005); U-Boot
+adopted it without a handshake and waited forever for CSTS.RDY. Run the INIT
+handshake whenever the controller is disabled and quiesce ANS again at
+hand-off, which Linux nvme-apple (kernel patch 0021) wakes.
+---
+--- a/drivers/nvme/nvme_apple.c
++++ b/drivers/nvme/nvme_apple.c
+@@ -651,8 +651,14 @@
+ 		return !ofnode_has_property(ofnode_path("/chosen"),
+ 					    "asahi,nvme-adopt");
+ 
+-	return !nvme_readq(priv->nvmmu + ANS_NVMMU_BASE_ASQ) &&
+-	       !readl(priv->base + ANS_MAX_PEND_CMDS_CTRL);
++	/*
++	 * J614s chain (nixos-m4pro): every m1n1 stage that used NVMe hands
++	 * ANS over quiesced (AP and IOP power 0x10, CPU running), so the
++	 * controller reads disabled but still programmed, and only a new
++	 * INIT handshake brings it back.  Adopting it instead waits forever
++	 * for CSTS.RDY.
++	 */
++	return true;
+ }
+ 
+ /*
+@@ -898,6 +904,23 @@
+ 	struct apple_nvme_priv *priv = dev_get_priv(dev);
+ 	u32 ctrl;
+ 
++	if (priv->hw->post_m4 && priv->woken && !priv->hw->keep_cc_fields) {
++		/*
++		 * J614s chain (nixos-m4pro): hand ANS on the way it came,
++		 * quiesced with its CPU running, as m1n1 does.  Linux's
++		 * nvme-apple wakes it with INIT and the firmware asks for new
++		 * buffers; ours stay reserved (apple_nvme_fdt_fixup()), as the
++		 * firmware may still write them.  Sleep would crash it.
++		 */
++		if (nvme_retire_io_queues(dev))
++			printf("%s: could not delete the I/O queues\n", dev->name);
++		if (apple_nvme_disable_post_m4(priv))
++			printf("%s: controller did not disable\n", dev->name);
++		if (apple_rtkit_shutdown(priv->rtk, APPLE_RTKIT_PWR_STATE_QUIESCED))
++			printf("%s: could not quiesce the ANS\n", dev->name);
++		return 0;
++	}
++
+ 	if (priv->hw->post_m4) {
+ 		/*
+ 		 * Hand the session over with RTKit live and the controller

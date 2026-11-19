@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Convert the J614s's Apple firmware with Asahi's converters, on a Mac
+# running macOS (any model: macOS carries every model's files), and add it
+# to the builder's Nix store, where pkgs/j614s-firmware.nix finds it by hash.
+# Apple's files stay out of the repo.
+#
+#   build/firmware/apple/tpmtfw-j614s.bin  trackpad, from
+#       /System/Volumes/Preboot/*/restore/Firmware/J614s_Multitouch.im4p
+#   build/firmware/brcm-mriya.tar          Wi-Fi and Bluetooth (BCM4388 C2,
+#       module "mriya" in the J614s ADT), from /usr/share/firmware
+#
+# Both are deterministic: the same macOS gives the same hashes.
+#   tools/mac-firmware [/usr/share/firmware]
+set -euo pipefail
+cd "$(dirname "$0")/.." || exit 1
+SRC=${1:-/usr/share/firmware}
+OUT=build/firmware/brcm-mriya.tar
+STAGE=$(mktemp -d)
+trap 'rm -rf "$STAGE"' EXIT
+
+# Trackpad: the converter wants <machine>/Multitouch.im4p.
+im4p=$(ls /System/Volumes/Preboot/*/restore/Firmware/J614s_Multitouch.im4p | head -n 1)
+mkdir -p "$STAGE/mt/j614s" build/firmware/apple
+cp "$im4p" "$STAGE/mt/j614s/Multitouch.im4p"
+(cd upstream/asahi-installer && PYTHONPATH=. ../../.venv-m1n1/bin/python - "$STAGE/mt" <<'PY'
+import sys
+from asahi_firmware.multitouch import MultitouchFWCollection
+for name, fw in MultitouchFWCollection(sys.argv[1]).files():
+    if name == "apple/tpmtfw-j614s.bin":
+        open("../../build/firmware/apple/tpmtfw-j614s.bin", "wb").write(fw.data)
+PY
+)
+shasum -a 256 build/firmware/apple/tpmtfw-j614s.bin
+docker exec -w /work nixos-m4pro-builder nix-store --add-fixed sha256 build/firmware/apple/tpmtfw-j614s.bin
+
+mkdir -p "$STAGE/brcm"
+(cd upstream/asahi-installer && PYTHONPATH=. ../../.venv-m1n1/bin/python - "$SRC" "$STAGE/brcm" <<'PY'
+import os, sys
+import asahi_firmware.wifi as wifi
+from asahi_firmware.wifi import WiFiFWCollection
+from asahi_firmware.bluetooth import BluetoothFWCollection
+src, out = sys.argv[1], sys.argv[2]
+
+# This Mac's BCM4388 is revision 6, C2. Asahi's converter skips
+# C-4388__s-C2 (broken in the macOS 14.6.1 IPSW); keep it.
+class KeepC2(list):
+    def __init__(self, real):
+        super().__init__(real)
+        self.real = real
+    def remove(self, x):
+        if x != "C-4388__s-C2":
+            self.real.remove(x)
+            super().remove(x)
+_walk = os.walk
+def walk(top, *a, **k):
+    for dp, dn, fn in _walk(top, *a, **k):
+        yield dp, KeepC2(dn), fn
+wifi.os.walk = walk
+
+n = 0
+files = list(WiFiFWCollection(os.path.join(src, "wifi")).files())
+files += list(BluetoothFWCollection(os.path.join(src, "bluetooth")).files())
+for name, fw in sorted(files, key=lambda f: f[0]):
+    if not ("brcmfmac4388c2" in name or "brcmbt4388c2" in name) or ",mriya" not in name:
+        continue
+    path = os.path.join(out, "lib/firmware", name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if isinstance(fw, str):
+        os.symlink(os.path.basename(fw), path)
+    else:
+        open(path, "wb").write(fw.data)
+    n += 1
+print(f"{n} files")
+PY
+)
+mkdir -p build/firmware
+tar -C "$STAGE/brcm" --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -cf "$OUT" lib 2>/dev/null ||
+  nix shell nixpkgs#gnutar -c tar -C "$STAGE/brcm" --sort=name --owner=0 --group=0 --numeric-owner --mtime=@0 -cf "$OUT" lib
+tar -tvf "$OUT"
+shasum -a 256 "$OUT"
+docker exec -w /work nixos-m4pro-builder nix-store --add-fixed sha256 "$OUT"

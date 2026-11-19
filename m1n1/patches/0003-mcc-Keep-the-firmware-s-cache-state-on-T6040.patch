@@ -1,0 +1,36 @@
+From b08f94c6801ad073bf5b1a0836adb472f3ef1e78 Mon Sep 17 00:00:00 2001
+From: nixos-m4pro <local@local>
+Date: Fri, 13 Nov 2026 02:01:41 +0530
+Subject: [PATCH 3/3] mcc: Keep the firmware's cache state on T6040
+
+The cache-enable sequence has not been worked out for T6040: every plane
+times out with status 0x10101. iBoot has already set up the system level
+cache, so leave it alone.
+---
+ src/mcc.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/mcc.c b/src/mcc.c
+index c3f84101..afe3a91d 100644
+--- a/src/mcc.c
++++ b/src/mcc.c
+@@ -210,6 +210,16 @@ int mcc_enable_cache(void)
+     if (!mcc_initialized)
+         return -1;
+ 
++    /*
++     * On T6040 the cache-enable sequence has not been worked out: every
++     * plane times out (status 0x10101). iBoot has already set the system
++     * level cache up, so keep its state.
++     */
++    if (chip_id == T6040) {
++        printf("MCC: keeping the firmware's cache state on T%x\n", chip_id);
++        return 0;
++    }
++
+     /* The 6030 memory controller supports setting a waymask, but the desktop chips do not appear to
+        use it */
+     for (int mcc = 0; mcc < mcc_count; mcc++) {
+-- 
+2.56.0
+

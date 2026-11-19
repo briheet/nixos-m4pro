@@ -1,0 +1,25 @@
+From: nixos-m4pro
+Subject: [PATCH] apple: rtkit_helper: take the stream from a multi-cell iommus
+
+The J614s device tree of this repository describes the MTP DART with
+Asahi's five-cell specifier (stream, then the DMA window), so the helper
+found no DART, could not keep its bypass ("J614s: MTP DART bypass
+unavailable (-19)") and the internal keyboard never started. The stream
+is the first cell either way.
+---
+--- a/arch/arm/mach-apple/rtkit_helper.c	2026-11-14 13:05:15.151459700 +0530
++++ b/arch/arm/mach-apple/rtkit_helper.c	2026-11-14 13:05:15.165004576 +0530
+@@ -100,8 +100,11 @@
+ 		priv->dma_end = range[0] + range[1];
+ 	}
+ 
+-	/* A live handoff additionally needs the DART left in bypass. */
+-	if (args.args_count == 1 &&
++	/*
++	 * A live handoff additionally needs the DART left in bypass. The first
++	 * cell is the stream; Asahi-style trees add a DMA window after it.
++	 */
++	if (args.args_count >= 1 &&
+ 	    !uclass_get_device_by_ofnode(UCLASS_IOMMU, args.node, &priv->dart))
+ 		priv->dart_sid = args.args[0];
+ }

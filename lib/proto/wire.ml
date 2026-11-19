@@ -32,6 +32,19 @@ let data_end_sentinel = 0xb0cacc10
 (* Darwin default in proxyclient/m1n1/proxy.py. The live device appears
    only while this Mac is booted into m1n1 and a second machine is the client. *)
 let darwin_device = "/dev/cu.usbmodemP_01"
+
+(* Channel 0 of the target's debug USB, after `macvdmtool debugusb` on the
+   host Mac. Serial mode (/dev/cu.debug-console) is refused by the M4 Pro
+   while the cable is in Thunderbolt mode; debug USB is accepted. *)
+let debugusb_device = "/dev/cu.kis-100000-ch-0"
+
+(* M1N1DEVICE is the variable proxyclient reads. Without it, the debug USB
+   channel is the path that works on this pair of Macs. *)
+let device () =
+  match Sys.getenv_opt "M1N1DEVICE" with
+  | Some path when path <> "" -> path
+  | _ -> debugusb_device
+
 let baud = 115200
 
 let u32 n = n land 0xffffffff

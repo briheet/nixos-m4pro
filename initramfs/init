@@ -1,0 +1,29 @@
+#!/bin/busybox sh
+# First userspace on J614s: mount the kernel filesystems and give a shell
+# on the console. See docs/boot_linux/checklist.md, items 5 and 10-11.
+/bin/busybox --install -s /bin
+mkdir -p /proc /sys /dev /tmp /run
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+mkdir -p /dev/pts && mount -t devpts devpts /dev/pts
+mount -t tmpfs tmpfs /tmp
+
+echo
+echo "nixos-m4pro initramfs on $(cat /proc/device-tree/model 2>/dev/null)"
+echo "$(uname -a)"
+echo
+
+# A shell on the internal screen (tty1), for the built-in keyboard. tty1
+# becomes its controlling terminal, so Ctrl-C and job control work there.
+(
+  while true; do
+    setsid -c /bin/sh -l < /dev/tty1 > /dev/tty1 2>&1
+  done
+) &
+
+# The console is whatever console= named last (the debug USB channel).
+# Respawn the shell if it exits.
+while true; do
+  setsid -c /bin/sh -l
+done

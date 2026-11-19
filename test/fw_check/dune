@@ -1,0 +1,5 @@
+; Cross-check of Fw.A64 against llvm-objdump on a firmware dump:
+;   dune exec test/fw_check/fw_check.exe -- DUMP_DIR REF.s
+(executable
+ (name fw_check)
+ (libraries fw))

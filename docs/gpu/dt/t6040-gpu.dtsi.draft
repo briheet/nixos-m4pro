@@ -1,0 +1,447 @@
+// SPDX-License-Identifier: GPL-2.0+ OR MIT
+/*
+ * DRAFT -- not built, not included anywhere. GPU (AGX G16S) of the Apple
+ * M4 Pro (T6040), as seen on this J614s. Phase 4 of docs/gpu/plan.md;
+ * every value is mapped to its source in docs/gpu/dt/README.md.
+ *
+ * Modelled on t602x-die0.dtsi / t602x-common.dtsi (the closest Asahi tree:
+ * G14S, 2 clusters, one die, CS/AFR rails). Written as fragments against
+ * our t6041.dtsi / t6040-j614s-pmgr.dtsi (kernel/patches/0001, 0003, 0023).
+ *
+ * Single die: one AIC die, so interrupts are <AIC_IRQ n flags> (as in our
+ * ANS/PMP mailbox nodes). perf-state-table-count = 2 -> two voltages per
+ * main OPP (GPU_REPEAT(x) = <x x> in t6020 terms); cs/afr dies = 1.
+ *
+ * Values marked "unit" were read from this machine's ADT (build/adt.bin)
+ * and belong to the bootloader (m1n1 kboot_gpu.c dt_set_gpu) in a final
+ * tree; they are written here so the draft is complete and checkable.
+ */
+
+/ {
+	aliases {
+		gpu = &gpu;	/* m1n1 dt_set_gpu() finds the node by this alias */
+	};
+
+	reserved-memory {
+		/*
+		 * Filled by m1n1 dt_set_gpu(): dt_set_region() copies the ADT
+		 * /arm-io/sgx <name>-base/-size and sets status = "okay";
+		 * dt_set_resvmem() points hw-cal-a/b and globals at buffers it
+		 * allocates and fills (rust_fill_gpu_initdata). m1n1 matches
+		 * the node names without the unit address. dt_set_memory()
+		 * then adds them to /memory since they lie outside usable RAM.
+		 *
+		 * This J614s / macOS 27.2 (ADT):
+		 *   gpu-region         0x105fffb8000 + 0x4000   -> uat-ttbs
+		 *   gfx-shared-region  0x105fff78000 + 0x40000  -> uat-pagetables
+		 *   gfx-handoff        0x105fff70000 + 0x4000   -> uat-handoff
+		 * Not consumed by the driver (listed for completeness):
+		 *   gfx-shared-l2-region 0x105fff74000 + 0x4000 (new vs. M2;
+		 *     macOS's GPU allocations, slot 2 of the kernel-half L0)
+		 *   gfx-data 0x10001ccc000 + 0xc4000, gfx-data-shared-ro
+		 *     0x10001d90000 + 0x8000 (= firmware __DATA, __DATA_SHARED_RO)
+		 *   gfx-data-shared-rw 0 + 0, rtkit-private-vm-region (an IOVA)
+		 * TODO: confirm the firmware segments (incl. __TEXT at
+		 * 0x10000c1c000 + 0x64000) are outside m1n1's usable RAM range,
+		 * or reserve them no-map.
+		 */
+		gpu_globals: globals {
+			status = "disabled";
+		};
+
+		gpu_hw_cal_a: hw-cal-a {
+			status = "disabled";
+		};
+
+		gpu_hw_cal_b: hw-cal-b {
+			status = "disabled";
+		};
+
+		uat_handoff: uat-handoff@10 {
+			reg = <0 0x10 0 0>;	/* m1n1: gfx-handoff */
+		};
+
+		uat_pagetables: uat-pagetables@20 {
+			reg = <0 0x20 0 0>;	/* m1n1: gfx-shared-region */
+		};
+
+		uat_ttbs: uat-ttbs@30 {
+			reg = <0 0x30 0 0>;	/* m1n1: gpu-region */
+		};
+	};
+
+	/*
+	 * Main OPP table: one entry per ADT perf state, in ADT order (16,
+	 * index 0 = off). m1n1 bails unless the count equals
+	 * perf-state-count exactly. The order is NOT monotonic: the ADT table
+	 * is the two firmware ladders interleaved (perf maps A/B at SGX
+	 * +0xe01400/+0xe01480, docs/gpu/facts.md); the driver indexes by
+	 * position, so keep ADT order. Duplicate opp-hz (1182 MHz) is legal
+	 * here only because nothing registers this table with the OPP core.
+	 * unit: opp-hz, opp-microvolt (table 0 volt, table 1 volt) from ADT
+	 * perf-states; opp-microwatt from m1n1 calc_power (TODO for T6040).
+	 */
+	gpu_opp: opp-table-gpu {
+		compatible = "operating-points-v2";
+
+		opp00 {
+			opp-hz = /bits/ 64 <0>;
+			opp-microvolt = <125000 125000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[0] (m1n1 calc_power) */
+		};
+		opp01 {
+			opp-hz = /bits/ 64 <338000000>;
+			opp-microvolt = <600000 595000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[1] (m1n1 calc_power) */
+		};
+		opp02 {
+			opp-hz = /bits/ 64 <618000000>;
+			opp-microvolt = <635000 650000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[2] (m1n1 calc_power) */
+		};
+		opp03 {
+			opp-hz = /bits/ 64 <796000000>;
+			opp-microvolt = <685000 685000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[3] (m1n1 calc_power) */
+		};
+		opp04 {
+			opp-hz = /bits/ 64 <924000000>;
+			opp-microvolt = <725000 710000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[4] (m1n1 calc_power) */
+		};
+		opp05 {
+			opp-hz = /bits/ 64 <952000000>;
+			opp-microvolt = <765000 755000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[5] (m1n1 calc_power) */
+		};
+		opp06 {
+			opp-hz = /bits/ 64 <1056000000>;
+			opp-microvolt = <765000 755000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[6] (m1n1 calc_power) */
+		};
+		opp07 {
+			opp-hz = /bits/ 64 <1062000000>;
+			opp-microvolt = <800000 795000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[7] (m1n1 calc_power) */
+		};
+		opp08 {
+			opp-hz = /bits/ 64 <1182000000>;
+			opp-microvolt = <800000 795000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[8] (m1n1 calc_power) */
+		};
+		opp09 {
+			opp-hz = /bits/ 64 <1182000000>;
+			opp-microvolt = <845000 845000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[9] (m1n1 calc_power) */
+		};
+		opp10 {
+			opp-hz = /bits/ 64 <1312000000>;
+			opp-microvolt = <845000 845000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[10] (m1n1 calc_power) */
+		};
+		opp11 {
+			opp-hz = /bits/ 64 <1242000000>;
+			opp-microvolt = <900000 900000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[11] (m1n1 calc_power) */
+		};
+		opp12 {
+			opp-hz = /bits/ 64 <1380000000>;
+			opp-microvolt = <900000 900000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[12] (m1n1 calc_power) */
+		};
+		opp13 {
+			opp-hz = /bits/ 64 <1326000000>;
+			opp-microvolt = <945000 950000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[13] (m1n1 calc_power) */
+		};
+		opp14 {
+			opp-hz = /bits/ 64 <1470000000>;
+			opp-microvolt = <945000 950000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[14] (m1n1 calc_power) */
+		};
+		opp15 {
+			opp-hz = /bits/ 64 <1578000000>;
+			opp-microvolt = <1030000 1035000>;
+			opp-microwatt = <0>; /* TODO: max_pwr[15] (m1n1 calc_power) */
+		};
+	};
+
+	/* unit: ADT cs-perf-states (dies = 1, count = 8, microvolts). */
+	gpu_cs_opp: opp-table-gpu-cs {
+		compatible = "operating-points-v2";
+
+		opp00 {
+			opp-hz = /bits/ 64 <24000000>;
+			opp-microvolt = <560000>;
+		};
+		opp01 {
+			opp-hz = /bits/ 64 <338000000>;
+			opp-microvolt = <560000>;
+		};
+		opp02 {
+			opp-hz = /bits/ 64 <618000000>;
+			opp-microvolt = <625000>;
+		};
+		opp03 {
+			opp-hz = /bits/ 64 <796000000>;
+			opp-microvolt = <665000>;
+		};
+		opp04 {
+			opp-hz = /bits/ 64 <992000000>;
+			opp-microvolt = <715000>;
+		};
+		opp05 {
+			opp-hz = /bits/ 64 <1188000000>;
+			opp-microvolt = <775000>;
+		};
+		opp06 {
+			opp-hz = /bits/ 64 <1380000000>;
+			opp-microvolt = <865000>;
+		};
+		opp07 {
+			opp-hz = /bits/ 64 <1470000000>;
+			opp-microvolt = <905000>;
+		};
+	};
+
+	/* unit: ADT afr-perf-states (dies = 1, count = 8, microvolts). */
+	gpu_afr_opp: opp-table-gpu-afr {
+		compatible = "operating-points-v2";
+
+		opp00 {
+			opp-hz = /bits/ 64 <24000000>;
+			opp-microvolt = <560000>;
+		};
+		opp01 {
+			opp-hz = /bits/ 64 <338000000>;
+			opp-microvolt = <560000>;
+		};
+		opp02 {
+			opp-hz = /bits/ 64 <618000000>;
+			opp-microvolt = <625000>;
+		};
+		opp03 {
+			opp-hz = /bits/ 64 <796000000>;
+			opp-microvolt = <665000>;
+		};
+		opp04 {
+			opp-hz = /bits/ 64 <992000000>;
+			opp-microvolt = <715000>;
+		};
+		opp05 {
+			opp-hz = /bits/ 64 <1188000000>;
+			opp-microvolt = <775000>;
+		};
+		opp06 {
+			opp-hz = /bits/ 64 <1380000000>;
+			opp-microvolt = <865000>;
+		};
+		opp07 {
+			opp-hz = /bits/ 64 <1470000000>;
+			opp-microvolt = <905000>;
+		};
+	};
+};
+
+/*
+ * GPU PMGR domains. Patch 0008 removed these from t6040-j614s-pmgr.dtsi
+ * because powering afr at probe raised an SError. They are required again
+ * for the GPU node (ADT: sgx clock-gates 0x190/0x192 -> afr then gfx;
+ * gfx-asc 0x191; nixos-m4pro power-chain shows afr (always-on in the ADT)
+ * as gfx's parent). docs/gpu/facts.md: SGX reads hang with only gfx up;
+ * afr must be raised first.
+ * TODO (blocker): find why afr -> SError under Linux (ordering against
+ * gpx? a PMP/"fab_afr" dependency? the always-on flag letting genpd skip
+ * it?) before this goes back.
+ */
+&pmgr_gfx {
+	ps_gpx: power-controller@0 {
+		compatible = "apple,t6040-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+		reg = <0 4>;
+		label = "gpx";
+		#power-domain-cells = <0>;
+		#reset-cells = <0>;
+		apple,always-on;
+	};
+
+	ps_afr: power-controller@100 {
+		compatible = "apple,t6040-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+		reg = <0x100 4>;
+		label = "afr";
+		#power-domain-cells = <0>;
+		#reset-cells = <0>;
+		apple,always-on;
+	};
+
+	ps_gfx: power-controller@110 {
+		compatible = "apple,t6040-pmgr-pwrstate", "apple,t8103-pmgr-pwrstate";
+		reg = <0x110 4>;
+		label = "gfx";
+		#power-domain-cells = <0>;
+		power-domains = <&ps_afr>;
+		#reset-cells = <0>;
+	};
+};
+
+&{/soc} {	/* t6041.dtsi "soc" simple-bus, #address-cells = <2> */
+	gpu: gpu@288000000 {
+		/*
+		 * TODO: "apple,agx-t6040" must be added to drm/asahi's OF table
+		 * (and m1n1's downstream_dtb list, or m1n1 will not write
+		 * firmware-version/-compat). Pattern follows t6020.dtsi
+		 * ("apple,agx-t6020", "apple,agx-g14x", "apple,agx-g14s"); "g16x"
+		 * is a guess by analogy (G14X = the register layout with core
+		 * masks at +0xe01500, which this GPU has). g16* needs a binding
+		 * (apple,agx.yaml lists only g13 and g14 parts). ADT: compatible
+		 * "gpu,t6040"; firmware: "FW Build variant: g16s".
+		 */
+		compatible = "apple,agx-t6040", "apple,agx-g16x", "apple,agx-g16s";
+		/*
+		 * asc: gfx-asc reg 0 (0x28a600000 + 0x88000 in the ADT); the
+		 * driver maps 0x4000 (ASC_CTL_SIZE). 0x40000 as on t602x so the
+		 * mailbox at +0x8000 sits inside, as there.
+		 * sgx: sgx reg 0 (0x288000000 + 0x3758000); the driver maps
+		 * exactly 0x1000000 (SGX_SIZE) and reads ID at +0xd04000 and the
+		 * core mask at +0xe01500 (G14X path; verified on this unit).
+		 * TODO: confirm 0xd04000 ID registers on G16 before probe.
+		 * ADT sgx reg 1 (0x288d00000 + 0x16c000) and gfx-asc reg 1
+		 * (0x28a050000 + 0x60000) are not used by the driver; reg 1 of
+		 * sgx is the analogue of t602x's "Fender" iomap (0x404d00000) --
+		 * those go in the driver's hw/t6040.rs io_mappings, not the DT.
+		 */
+		reg = <0x2 0x8a600000 0 0x40000>,
+		      <0x2 0x88000000 0 0x1000000>;
+		reg-names = "asc", "sgx";
+		/*
+		 * ADT sgx interrupts, in ADT order (t602x lists 7 of 8; the
+		 * driver requests none). 1505/1507/1496/1498 vs. t602x's
+		 * 1147/1149/1142: the 8th is kept until the role of each is known.
+		 */
+		interrupt-parent = <&aic>;
+		interrupts = <AIC_IRQ 1481 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1482 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1483 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1484 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1505 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1507 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1496 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1498 IRQ_TYPE_LEVEL_HIGH>;
+		mboxes = <&agx_mbox>;
+		power-domains = <&ps_gfx>;
+		memory-region = <&uat_ttbs>, <&uat_pagetables>, <&uat_handoff>,
+				<&gpu_hw_cal_a>, <&gpu_hw_cal_b>, <&gpu_globals>;
+		memory-region-names = "ttbs", "pagetables", "handoff",
+				      "hw-cal-a", "hw-cal-b", "globals";
+
+		/*
+		 * Overwritten by m1n1 from ADT /chosen firmware-version
+		 * ("mBoot-20457.41.3" here). TODO (blocker): m1n1's fw_versions
+		 * has no 27.2 entry (V27_0 = mBoot-20457.1.29), so it would write
+		 * the V_UNKNOWN value <0> (one cell) and the driver's 3-cell read
+		 * of apple,firmware-compat fails. Needs V27_2 = {27, 2, 0}.
+		 */
+		apple,firmware-abi = <0 0 0>;
+		apple,firmware-version = <0 0 0>;
+		apple,firmware-compat = <0 0 0>;
+
+		operating-points-v2 = <&gpu_opp>;
+		apple,cs-opp = <&gpu_cs_opp>;
+		apple,afr-opp = <&gpu_afr_opp>;
+
+		/*
+		 * Static per-SoC values (t602x hard-codes 790000/812000).
+		 * unit/ADT: perf-states-sram floor and cs/afr min_sram_volt are
+		 * both 810 mV on this unit. TODO: check macOS (ioreg AGX
+		 * properties / InitData trace) for the value it programs.
+		 */
+		apple,min-sram-microvolt = <810000>;
+		apple,csafr-min-sram-microvolt = <810000>;
+		apple,perf-base-pstate = <1>;	/* ADT has no gpu-perf-base-pstate */
+
+		/* ADT sgx: gpu-power-sample-period, gpu-pwr-sample-period-aic-clks */
+		apple,power-sample-period = <8>;
+		apple,pwr-sample-period-aic-clks = <200000>;
+
+		/*
+		 * Power/perf controller tunables: NOT in the ADT; Asahi took
+		 * them from macOS (AGX kext defaults / InitData traces). Copied
+		 * from t602x-die0.dtsi as placeholders.
+		 * TODO: replace with values decoded from our 27.2 InitData
+		 * (HwDataA / RegionB in lib/agx) -- they are in the traces.
+		 */
+		/* these six: t6020.dtsi (M2 Pro, also 2 clusters / 1 die) */
+		apple,avg-power-filter-tc-ms = <302>;
+		apple,avg-power-ki-only = <2.6375>;
+		apple,avg-power-kp = <0.18>;
+		apple,avg-power-min-duty-cycle = <40>;
+		apple,avg-power-target-filter-tc = <1>;
+		apple,fast-die0-integral-gain = <1350.0>;
+		apple,fast-die0-proportional-gain = <34.0>;
+		apple,perf-boost-ce-step = <50>;
+		apple,perf-boost-min-util = <90>;
+		apple,perf-filter-drop-threshold = <0>;
+		apple,perf-filter-time-constant = <5>;
+		apple,perf-filter-time-constant2 = <200>;
+		apple,perf-integral-gain = <1.62>;
+		apple,perf-integral-gain2 = <1.62>;
+		apple,perf-integral-min-clamp = <0>;
+		apple,perf-proportional-gain2 = <5.4>;
+		apple,perf-proportional-gain = <5.4>;
+		apple,perf-tgt-utilization = <85>;
+		apple,ppm-filter-time-constant-ms = <32>;	/* t6020.dtsi */
+		apple,ppm-ki = <28.0>;				/* t6020.dtsi */
+		apple,ppm-kp = <0.1>;
+		apple,pwr-filter-time-constant = <313>;
+		apple,pwr-integral-gain = <0.0202129>;
+		apple,pwr-integral-min-clamp = <0>;
+		apple,pwr-min-duty-cycle = <40>;
+		apple,pwr-proportional-gain = <5.2831855>;
+		apple,se-engagement-criteria = <700>;
+		apple,se-filter-time-constant = <9>;
+		apple,se-filter-time-constant-1 = <3>;
+		apple,se-inactive-threshold = <2500>;
+		apple,se-ki = <-50.0>;
+		apple,se-ki-1 = <-100.0>;
+		apple,se-kp = <-5.0>;
+		apple,se-kp-1 = <-10.0>;
+		apple,se-reset-criteria = <50>;
+
+		/*
+		 * Leakage: overwritten by m1n1 (fdt_set_float_array) from the
+		 * efuses. Lengths are checked by the driver: core/sram =
+		 * max_num_clusters (2), cs/afr = num_dies (1).
+		 * Per-unit values come from the efuses at boot and are not kept
+		 * in the repo (fuse values stay in build/). m1n1's T6020 path additionally scales nothing
+		 * (adjust_leakages = false). The float syntax relies on Asahi's
+		 * dtc float support, as t602x-die0.dtsi does.
+		 */
+		/* placeholders: m1n1 fills these from the efuses */
+		apple,core-leak-coef = <0.0 0.0>;
+		apple,sram-leak-coef = <0.0 0.0>;
+		apple,cs-leak-coef = <0.0>;
+		apple,afr-leak-coef = <0.0>;
+	};
+
+	/*
+	 * gfx-asc mailbox: ASC reg 0 + 0x8000 (the hypervisor tracer's
+	 * ASCTracer reads the GPU mailbox there; same layout as our ANS
+	 * 0x409600000/+0x8000 and PMP mailboxes). ADT gfx-asc interrupts are
+	 * 1502 1501 1504 1503; sorted they map to send-empty, send-not-empty,
+	 * recv-empty, recv-not-empty as for t602x (1143..1146).
+	 * TODO: verify the order once (recv-not-empty must fire on an
+	 * RTKit HELLO).
+	 */
+	agx_mbox: mbox@28a608000 {
+		compatible = "apple,t6041-asc-mailbox", "apple,asc-mailbox-v4";
+		reg = <0x2 0x8a608000 0x0 0x4000>;
+		interrupt-parent = <&aic>;
+		interrupts = <AIC_IRQ 1501 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1502 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1503 IRQ_TYPE_LEVEL_HIGH>,
+			     <AIC_IRQ 1504 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-names = "send-empty", "send-not-empty",
+				  "recv-empty", "recv-not-empty";
+		#mbox-cells = <0>;
+		power-domains = <&ps_gfx>;	/* TODO: t602x gives none; gfx-asc gate 0x191 */
+	};
+};

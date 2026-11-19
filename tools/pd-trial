@@ -1,0 +1,23 @@
+#!/bin/sh
+# For each group of PMGR domains: boot, power the group off, and wait to
+# see whether the machine resets. A domain the firmware relies on shows up
+# as a reset about 2.5 minutes after it is turned off, so each trial waits
+# WAIT seconds (default 240).
+#   tools/pd-trial "name name ..." "name ..." ...
+# One line per group goes to build/pd-results.txt.
+cd "$(dirname "$0")/.." || exit 1
+WAIT=${WAIT:-240}
+for group in "$@"; do
+  tools/m4run "" > /dev/null 2>&1 || { echo "$(date +%H:%M:%S) boot failed for: $group" | tee -a build/pd-results.txt; continue; }
+  if ! tools/pd-off $group > /dev/null 2>&1; then
+    echo "$(date +%H:%M:%S) DIED while powering off: $group" | tee -a build/pd-results.txt
+    continue
+  fi
+  off_at=$(date +%s)
+  tools/m4wait "$WAIT" > /dev/null 2>&1
+  if [ -e /dev/cu.kis-100000-ch-0 ] && [ -n "$(tools/m4sh 'cat /proc/uptime' 3)" ]; then
+    echo "$(date +%H:%M:%S) SURVIVED ${WAIT}s: $group" | tee -a build/pd-results.txt
+  else
+    echo "$(date +%H:%M:%S) RESET $(( $(date +%s) - off_at ))s after power-off: $group" | tee -a build/pd-results.txt
+  fi
+done

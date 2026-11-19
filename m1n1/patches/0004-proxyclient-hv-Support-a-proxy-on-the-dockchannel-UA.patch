@@ -1,0 +1,66 @@
+From 3518144a86e0a4a9335c8e8e6d4d158ef5d655a3 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 10:42:43 +0530
+Subject: [PATCH] proxyclient/hv: Support a proxy on the dockchannel UART
+ (debug USB)
+
+map_essential assumed the proxy is on a USB controller and looked up
+ATC<n>_USB with n = iodev - USB0, which fails for the dockchannel UART. Keep
+only UART0 hooked then, and hide the dockchannel UART and the USB-C port
+controllers (hpm*) from the guest so it does not drop debug USB.
+---
+ proxyclient/m1n1/hv/__init__.py | 31 +++++++++++++++++++++++++++----
+ 1 file changed, 27 insertions(+), 4 deletions(-)
+
+diff --git a/proxyclient/m1n1/hv/__init__.py b/proxyclient/m1n1/hv/__init__.py
+index c86e84c0..36f889b1 100644
+--- a/proxyclient/m1n1/hv/__init__.py
++++ b/proxyclient/m1n1/hv/__init__.py
+@@ -1544,10 +1544,14 @@ class HV(Reloadable):
+             self.log(f"PMGR R {base:x}+{off:x}:{width} = 0x{data:x} -> 0x{ret:x}")
+             return ret
+ 
+-        atc = f"ATC{self.iodev - IODEV.USB0}_USB"
+-        atc_aon = f"ATC{self.iodev - IODEV.USB0}_USB_AON"
+-
+-        hook_devs = ["UART0", atc, atc_aon]
++        if self.iodev >= IODEV.USB0:
++            atc = f"ATC{self.iodev - IODEV.USB0}_USB"
++            atc_aon = f"ATC{self.iodev - IODEV.USB0}_USB_AON"
++            hook_devs = ["UART0", atc, atc_aon]
++        else:
++            # The proxy is not on a USB controller (e.g. the dockchannel UART
++            # over debug USB), so there is no ATC to keep powered.
++            hook_devs = ["UART0"]
+ 
+         pmgr = self.adt["/arm-io/pmgr"]
+         dev_by_name = {dev.name: dev for dev in pmgr.devices}
+@@ -1680,6 +1684,25 @@ class HV(Reloadable):
+         # to re-enable XNU serial output for newer macOS versions
+         self.adt["defaults"].serial_device = getattr(self.adt["/arm-io/uart0"], "AAPL,phandle")
+ 
++        if self.iodev == IODEV.DOCKCHANNEL_UART:
++            # The proxy runs over the dockchannel UART, which debug USB carries
++            # to the host on one of the USB-C ports. Keep the guest away from
++            # the dockchannel and from the USB-C port controllers, which would
++            # renegotiate the port and drop debug USB.
++            names = ["/arm-io/dockchannel-uart"]
++            for bus in ("nub-spmi-a0", "nub-spmi-a1", "nub-spmi0", "nub-spmi1"):
++                try:
++                    names += [f"/arm-io/{bus}/{n.name}" for n in self.adt[f"/arm-io/{bus}"]
++                              if n.name.startswith("hpm")]
++                except KeyError:
++                    pass
++            for name in names:
++                print(f"Removing ADT node {name}")
++                try:
++                    del self.adt[name]
++                except KeyError:
++                    pass
++
+         if self.iodev >= IODEV.USB0:
+             idx = self.iodev - IODEV.USB0
+             for prefix in ("/arm-io/dart-usb%d",
+-- 
+2.56.0
+

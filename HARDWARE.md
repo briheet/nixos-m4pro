@@ -2,7 +2,7 @@
 
 MacBook Pro (14-inch, M4 Pro, 2024), dumped from macOS on 2026-11-12. This is an inventory of what is in the machine and what the bootloader, the Linux device tree, and the Asahi feature matrix actually cover. Raw dumps are in `configs/`.
 
-This machine cannot boot NixOS today. The Asahi installer does not support it, and the published device tree only describes a small part of the chip.
+When this inventory was taken the machine could not boot NixOS: the Asahi installer does not support it, and the published device tree only describes a small part of the chip. It now runs NixOS from its SSD; see README.md.
 
 ## Machine
 

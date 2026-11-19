@@ -1,0 +1,98 @@
+From 23936beb2e928b7cac88842ab2aed8d400711142 Mon Sep 17 00:00:00 2001
+From: briheet-invideo <dev@localhost>
+Date: Fri, 13 Nov 2026 13:22:33 +0530
+Subject: [PATCH] chainload: Move all of iBoot's boot blobs out of the next
+ stage's way
+
+chainload_image copies the next stage to m1n1's own base but moved only
+SEPFW. On T6040 iBoot places RTBuddySeg, SEPFW, SEPPatches, uStuff, preoslog
+and BootArgs directly after the boot object, so a stage 2 larger than stage 1
+was copied over them. Move every blob proxyclient's chainload.py moves
+(m1n1/bootmem.py BOOT_BLOBS) and update its memory-map entry.
+---
+ src/chainload.c | 54 ++++++++++++++++++++++++++++++++-----------------
+ 1 file changed, 36 insertions(+), 18 deletions(-)
+
+diff --git a/src/chainload.c b/src/chainload.c
+index eeb8f3e9..1c5c0f5d 100644
+--- a/src/chainload.c
++++ b/src/chainload.c
+@@ -34,23 +34,38 @@ int chainload_image(void *image, size_t size, char **vars, size_t var_cnt)
+     image_size += 4;
+     image_size = ALIGN_UP(image_size, SZ_16K);
+ 
+-    // SEPFW
+-    size_t sepfw_off = image_size;
++    // Firmware blobs iBoot placed in memory and lists in /chosen/memory-map.
++    // On newer chips iBoot puts several of them right after the boot object,
++    // where the next stage is copied, so each is copied into the new image and
++    // its memory-map entry moved, as proxyclient's chainload.py does
++    // (m1n1/bootmem.py BOOT_BLOBS).
++    static const char *blob_names[] = {
++        "SEPFW",      "SEPPatches",  "uStuff",
++        "preoslog",   "RTBuddySeg",  "RAMDisk",
++        "SPTMDebug",  "ExclaveOSIntegrityCatalog", "ExclaveOSTrustCache",
++        "TrustCache",
++    };
++    struct {
++        u64 range[2];
++        size_t off;
++    } blobs[ARRAY_SIZE(blob_names)];
+ 
+     int anode = adt_path_offset(adt, "/chosen/memory-map");
+     if (anode < 0) {
+         printf("chainload: /chosen/memory-map not found\n");
+         return -1;
+     }
+-    u64 sepfw[2];
+-    if (ADT_GETPROP_ARRAY(adt, anode, "SEPFW", sepfw) < 0) {
+-        printf("chainload: Failed to find SEPFW\n");
+-        return -1;
++    for (size_t i = 0; i < ARRAY_SIZE(blob_names); i++) {
++        blobs[i].off = 0;
++        if (ADT_GETPROP_ARRAY(adt, anode, blob_names[i], blobs[i].range) < 0)
++            continue;
++        if (blobs[i].range[0] == ~0UL || blobs[i].range[1] == 0)
++            continue;
++        blobs[i].off = image_size;
++        image_size += blobs[i].range[1];
++        image_size = ALIGN_UP(image_size, SZ_16K);
+     }
+ 
+-    image_size += sepfw[1];
+-    image_size = ALIGN_UP(image_size, SZ_16K);
+-
+     // Bootargs
+     size_t bootargs_off = image_size;
+     const size_t bootargs_size = SZ_16K;
+@@ -78,15 +93,18 @@ int chainload_image(void *image, size_t size, char **vars, size_t var_cnt)
+     // Add end padding
+     memset(p, 0, 4);
+ 
+-    // Copy SEPFW
+-    memcpy(new_image + sepfw_off, (void *)sepfw[0], sepfw[1]);
+-
+-    // Adjust ADT SEPFW address
+-    sepfw[0] = new_base + sepfw_off;
+-    if (adt_setprop(adt, anode, "SEPFW", &sepfw, sizeof(sepfw)) < 0) {
+-        printf("chainload: Failed to set SEPFW prop\n");
+-        free(new_image);
+-        return -1;
++    // Copy the firmware blobs and point their memory-map entries at the copies
++    for (size_t i = 0; i < ARRAY_SIZE(blob_names); i++) {
++        if (!blobs[i].off)
++            continue;
++        printf("chainload: Moving %s (0x%lx bytes)\n", blob_names[i], blobs[i].range[1]);
++        memcpy(new_image + blobs[i].off, (void *)blobs[i].range[0], blobs[i].range[1]);
++        blobs[i].range[0] = new_base + blobs[i].off;
++        if (adt_setprop(adt, anode, blob_names[i], blobs[i].range, sizeof(blobs[i].range)) < 0) {
++            printf("chainload: Failed to set %s prop\n", blob_names[i]);
++            free(new_image);
++            return -1;
++        }
+     }
+ 
+     // Copy bootargs
+-- 
+2.56.0
+

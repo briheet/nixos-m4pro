@@ -1,0 +1,74 @@
+From 22a87993dd1916d21f9b3bed332c342f39607098 Mon Sep 17 00:00:00 2001
+From: Erik Sandfort <eriksandfort@gmail.com>
+Date: Sun, 13 Sep 2026 21:47:24 -0400
+Subject: [PATCH] drm: fall back to the GBM platform when no EGL device matches
+
+CDRMRenderer::attempt(backend, drmFD) resolves a renderer through
+EGL_PLATFORM_DEVICE_EXT, which requires an EGL device that matches the
+DRM node. Devices that expose KMS without a render node have no such
+match: eglQueryDeviceStringEXT returns EGL_BAD_PARAMETER for them, so
+eglDeviceFromDRMFD finds nothing and renderer creation fails.
+
+initMgpu() gave up at that point even though the GBM-platform overload,
+CDRMRenderer::attempt(backend, allocator), initializes fine on these
+devices, and initMgpu() has already built the allocator it needs. Try
+it before failing.
+
+Failing also had no memory. updateSecondaryRendererState() runs from
+applyCommit, so every commit re-entered initMgpu(), reopened the DRM
+node, built a fresh GBM allocator and re-ran the whole EGL enumeration.
+On a VirtualBox guest (vboxvideo, no render node) that logged four
+errors and the full EGL client-extension string per commit: ~20 failed
+commits/sec writing 17 KB/s, 59 MB/hour into /run. Because the retry
+sits inline on the commit path, it also delays every frame. When both
+paths fail, stop requiring a renderer instead of retrying forever.
+
+This generalizes two existing narrow fixes in the same area. #291 falls
+back to the sole renderD node when parent-syspath matching fails, which
+cannot help when the device has no render node at all, and the
+AQ_BACKEND_GPU_DRIVER_EVDI case hardcodes one driver name. Devices
+still falling through include vboxvideo, vmwgfx without 3D, qxl and
+simpledrm.
+
+Tested on VirtualBox 7.2.16 / vboxvideo with no renderD node: the GBM
+fallback now creates a renderer (llvmpipe, OpenGL ES 3.2) where none
+was created before, and the per-commit error storm is gone.
+---
+ src/backend/drm/DRM.cpp | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/backend/drm/DRM.cpp b/src/backend/drm/DRM.cpp
+index 431c83fa..0c9980e1 100644
+--- a/src/backend/drm/DRM.cpp
++++ b/src/backend/drm/DRM.cpp
+@@ -877,8 +877,21 @@ bool Aquamarine::CDRMBackend::initMgpu() {
+ 
+     rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
+ 
++    if (!rendererState.renderer) {
++        // KMS-only devices (VM display adapters such as vboxvideo, DisplayLink, simpledrm)
++        // expose no EGL device matching their DRM node, so the EGL_PLATFORM_DEVICE path
++        // above finds nothing. EGL_PLATFORM_GBM still initializes on them, so try it
++        // before giving up.
++        backend->log(AQ_LOG_DEBUG, "drm: initMgpu: no EGL device matches this DRM node, trying the GBM platform");
++        rendererState.renderer = CDRMRenderer::attempt(backend.lock(), newAllocator);
++    }
++
+     if (!rendererState.renderer) {
+         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
++        // Nothing about this GPU changes until it is re-registered, so a retry cannot
++        // succeed. Stop requiring a renderer; otherwise every commit repeats the whole
++        // attempt, which costs tens of milliseconds of CPU per frame and floods the log.
++        rendererRequired = false;
+         return false;
+     }
+ 
+@@ -1542,6 +1555,8 @@ void Aquamarine::CDRMBackend::onReady() {
+             backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
+         else {
+             auto r = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
++            if (!r)
++                r = CDRMRenderer::attempt(backend.lock(), a); // KMS-only device: no matching EGL device, but GBM works
+             if (!r)
+                 backend->log(AQ_LOG_ERROR, "drm: onReady: no renderer for gl formats");
+             else {
