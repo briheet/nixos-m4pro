@@ -1,159 +1,121 @@
 # nixos-m4pro
 
-NixOS on a 14-inch MacBook Pro with the M4 Pro (`Mac16,8`, board `J614s`, SoC `T6040`), which the Asahi installer does not support yet. Personal use: the patches here are written for this machine, not for upstream.
+Host-side work toward NixOS on a 14-inch MacBook Pro with M4 Pro (`Mac16,8` / `J614s` / `T6040`). An OCaml client drives an unmodified [m1n1](https://github.com/AsahiLinux/m1n1). The boot image is m1n1 with a Linux kernel and a small initramfs concatenated after it.
 
-NixOS runs from the internal SSD and boots from power-on without the host: m1n1 → U-Boot → extlinux menu → NixOS ([docs/boot_linux/boot-chain.md](docs/boot_linux/boot-chain.md)). Working: all 12 CPUs (idling in WFI), the internal screen (boot framebuffer), keyboard, multitouch trackpad, SSD, Wi-Fi, Bluetooth, battery and charger, power button and lid, real-time clock, clean reboot, and a Hyprland desktop. [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md) tracks every piece of hardware.
+This does not install NixOS, and it does not boot this Mac by itself. Two things can be reproduced from a fresh clone:
 
-## What is in the repo
+- The host client, on the in-process loopback. It prints the boot-path log. It does not touch hardware.
+- `build/linux/m1n1-linux.bin`. m1n1's payload scanner can read it. Handing it to a machine needs a second computer, and the target Mac already running m1n1. That handoff has not been run for this tree.
 
-| Path | What |
+The laptop screen stays dark. The shell, if the handoff reaches userspace, is on the debug serial port.
+
+## Layout
+
+| Path | What it is |
 |---|---|
-| `flake.nix` | inputs nixpkgs, `m1n1`, `u-boot`, `linux` (sources, locked in `flake.lock`); `nixosModules` `default`, `hardware`, `desktop`; `nixosConfigurations.m4pro` (on the SSD), `m4pro-ram` (from RAM, the installer); packages `boot-files`, `m1n1`, `m1n1-dev`, `m1n1-stage1`, `u-boot` |
-| `nixos/` | `j614s.nix` the hardware (kernel and its parameters, firmware, console font, debug console; `nixosModules.hardware`), `j614s-ssd.nix` adds the SSD layout and boot chain (`nixosModules.default`), `m1n1-boot.nix` writes stage 2 to the ESP, `kernel.nix` the kernel, `desktop.nix` Hyprland, greetd and the aquamarine fix (`nixosModules.desktop`), `common.nix` this repo's own policy (hostname, logins, sshd), `disk.nix` the installed system, `ram.nix` the installer |
-| `kernel/patches/` | Patches on AsahiLinux/linux `asahi` (the `linux` input): J614s device trees (PMGR, NVMe, PMP, SMC, SPMI PMU, MTP, PCIe, Wi-Fi/Bluetooth), the dockchannel console, NVMe and PMP changes, and ports from aurora-silicon (WFI register save, MTP transport, brcmfmac BCM4388 C2) |
-| `kernel/*.config` | Kernel configs; `m4pro-nixos.full.config` is the one NixOS builds, `m4pro-nixos.config` lists what was added and why |
-| `m1n1/patches/` | m1n1 fixes for T6040 on the `m1n1` input (DAPF, CTRR, MCC, ANS quiesce, chainload) |
-| `u-boot/patches/` | aurora-silicon U-Boot change for this boot chain (ANS handed over quiesced) |
-| `pkgs/` | `m1n1.nix` (m1n1 with the patches and the NixOS logo), `u-boot.nix`, `j614s-firmware.nix` (Apple firmware, pinned by hash), `m4pro-install.nix` (the installer) |
-| `tools/` | Host side: `tether-boot.py`, `m4console`, `m4sh`, `m4reboot`, `uboot-boot`, `mac-firmware`, `m1n1-try`, `stage1-test.py` |
-| `bin/`, `lib/` | `nixos-m4pro`, OCaml tools: ADT parser, PMGR device-tree generator, m1n1 proxy probes |
-| `docs/` | Bring-up notes per subsystem, the boot chain, and the hardware list |
+| `lib/` | UART, watchdog, AIC, PMGR, DART, PCIe, SART, NVMe, and the payload handoff |
+| `bin/main.ml` | Runs the loopback boot path |
+| `docs/required_to_boot/` | Notes for those drivers |
+| `docker/m1n1.Dockerfile` | Debian trixie image used to cross-build |
+| `scripts/build-m1n1-linux.sh` | Builds the concatenated image inside that container |
+| `upstream/m1n1`, `upstream/linux` | Checkouts you clone yourself. They are not in this commit |
+| `build/` | Build output. Git ignores it |
+| `configs/` | Machine dumps from the original Mac. Git ignores them. Nothing here needs them |
 
-Everything is pinned: nixpkgs and the kernel, m1n1 and U-Boot sources by `flake.lock`, and the patches in the repo. Apple's firmware is the one input that cannot be in the repo: Nix knows it by hash, and `tools/mac-firmware` produces exactly those files from a Mac running macOS.
+`.gitmodules` names the two upstream repositories. This commit does not record submodule commits, so `git submodule update` will not fetch them.
 
-## What you need
+## Sources
 
-- **The target:** the M4 Pro, with a second APFS volume (`macostest` here) with macOS installed on it and set to Reduced Security in Startup Security Utility. m1n1 goes on that volume as its custom boot object. Your normal macOS volume stays at Full Security and is not touched.
-- **The host:** another Apple Silicon Mac running macOS, connected to the target's left USB-C port, with Docker (8 GB of memory is enough), Nix (for `just`), Python 3, OCaml/dune, and [macvdmtool](https://github.com/AsahiLinux/macvdmtool) built at `~/code/macvdmtool` (or set `MACVDMTOOL`). macvdmtool needs passwordless sudo for that one binary; nothing else does.
-- Apps that grab USB devices (Chrome, ChatGPT) closed while debug USB connects.
+m1n1 `cf37927d6bf47c502136e7d2c9e61f946b0b8745` (`v2.0.0-105-gcf37927d`).
 
-Run everything below with `just`, from `nix develop` or `nix shell nixpkgs#just`.
+Asahi Linux `7b0c21fc289711e372fa3cd48a509f837cc9a4bf` (`arm64: dts: apple: Add minimal t604x (M4 Pro/Max) device trees`).
 
-## Install from scratch
-
-1. **Host setup** (once):
-   ```
-   just builder        # Nix in an aarch64-linux container
-   just setup          # m1n1 sources and proxy client, Python deps, OCaml tools
-   tools/mac-firmware  # Apple firmware (trackpad, Wi-Fi, Bluetooth) into the builder's store
-   just build          # kernel, device trees, RAM installer and SSD system into build/out
-   ```
-   `tools/mac-firmware` reads the host's own macOS (`/usr/share/firmware`, and `J614s_Multitouch.im4p` in the Preboot restore bundle): macOS carries the files of every model. The same macOS gives the same hashes as in `pkgs/j614s-firmware.nix`; another version gives a hash mismatch, and then the two `sha256` lines there change with it.
-2. **Make room on the SSD**, in macOS on the M4 Pro. Back up first if you can. Check the container's physical store with `diskutil apfs list`; it is `disk0s2` on this Mac. Leave macOS headroom above what is in use:
-   ```
-   tmutil deletelocalsnapshots /
-   diskutil apfs resizeContainer disk0s2 370g
-   ```
-3. **m1n1 stage 1 on `macostest`**, from 1TR recoveryOS (hold the power button, Options, then Utilities → Terminal):
-   ```
-   just m1n1-serve stage1     # on the host: builds m1n1 and serves the kmutil script on the USB link
-   sh <(curl <address>:8000)  # in recoveryOS, with the address it prints
-   ```
-   Stage 1 chainloads `m1n1/boot.bin` from the ESP. Until the ESP exists it finds nothing to chainload and stays in m1n1's USB proxy, which the next step uses.
-4. **Boot the installer** (the M4 Pro powered on into `macostest`):
-   ```
-   just restart
-   just dev-boot ram   # a few minutes: the installer carries the whole system
-   ```
-5. **Install.** Each step asks for confirmation on the host and refuses on the target if it finds anything it did not expect (an existing NixOS partition or filesystem, a non-macOS layout, too little free space):
-   ```
-   just flash       # partition, format, install
-   ```
-   `partition` saves the GPT to `/root/gpt-before.bin` before changing it, and only adds partitions 4 and 5 in the free block between the macOS container and recoveryOS. The install writes stage 2 (m1n1 + device tree + U-Boot) to the ESP.
-6. **Boot it:** power on, or `tools/m4reboot`. U-Boot boots the newest generation after 5 s (about 25 s from iBoot to the login screen).
-7. **Your password**, from the host (it prompts there; only the hash goes to the Mac):
-   ```
-   just set-password briheet
-   ```
-8. **On the Mac:** log in as `briheet` and pick Hyprland, then join Wi-Fi with `nmtui` (or `nmcli device wifi connect <SSID> --ask`).
-
-## Using it
-
-- **Logins:** `briheet` (wheel: `sudo`, video, input, networkmanager). Root is locked; it logs in by itself only on the debug-USB console (`ttyDC0`), which needs the cable to the host and is what `tools/m4sh` drives.
-- **Desktop:** Hyprland, drawn on the CPU (no GPU driver for M4 yet), started by greetd/tuigreet. Its config is yours (`~/.config/hypr/hyprland.lua`, for example from home-manager); without one Hyprland writes its default. Keep blur, shadows and animations off: they cost the most in software.
-- **Boot menu:** U-Boot's extlinux menu lists the generations for 5 s: type an entry's number and Enter on the internal keyboard. Any key during U-Boot's countdown stops at its `=>` prompt. U-Boot hands the running keyboard coprocessor (MTP) to Linux, which adopts it (kernel patches 0032, 0033).
-- **Reboots:** `systemctl reboot` restarts through the SMC. From the host, `tools/m4reboot` does the same when Linux answers on the console and a hard reset otherwise.
-- **The Recovery / Startup Disk screen:** iBoot counts failed boots in the PMU and stops booting the volume after a run of hard resets. Linux clears the count on every boot, and so does the m1n1 proxy client; if the screen shows anyway, pick Startup Disk → `macostest`.
-
-## Updating
-
-Once the Mac is on Wi-Fi, it builds and switches itself:
-
-```
-git push            # the Mac fetches the branch from GitHub
-just update         # native build on the Mac, live switch, new boot entry
+```bash
+git clone https://github.com/briheet/nixos-m4pro
+cd nixos-m4pro
+git clone https://github.com/AsahiLinux/m1n1 upstream/m1n1
+git -C upstream/m1n1 checkout cf37927d6bf47c502136e7d2c9e61f946b0b8745
+git clone --filter=blob:none \
+  https://github.com/AsahiLinux/linux upstream/linux
+git -C upstream/linux checkout 7b0c21fc289711e372fa3cd48a509f837cc9a4bf
 ```
 
-It runs as a systemd unit on the Mac (`journalctl -u m4update`), so a dropped console does not stop it. The Mac's builds are bit-identical to the builder's. Without a network, the installer route still works:
+On a case-insensitive disk, the Linux checkout warns about colliding header names. The tree still builds. `uname` then ends in `-dirty`.
 
-```
-just build
-just stage2-proxy   # U-Boot has no USB proxy: put the debug m1n1 back as stage 2
-just dev-boot ram
-just flash-system   # adds a generation and writes the U-Boot stage 2 back
-tools/m4reboot
-```
+## Host client
 
-## Boot chain updates
+The flake covers `aarch64-darwin`, `aarch64-linux`, `x86_64-darwin`, and `x86_64-linux`.
 
-m1n1, U-Boot and the kernel are flake inputs, locked in `flake.lock`; the patches in `m1n1/`, `u-boot/` and `kernel/` apply on top. To follow upstream:
-
-```
-nix flake update m1n1      # or u-boot, linux; or all three
-git commit -am "..." && git push
+```bash
+nix develop
+dune test
+dune exec nixos-m4pro
 ```
 
-then rebuild as usual (`just update`, or bump `nixos-m4pro` in your own flake and `nixos-rebuild switch`). If a patch no longer applies, the build says which; refresh it in the patch directory.
+The program walks UART, the watchdog, AIC, PMGR, DART, PCIe, SART, and NVMe on a loopback peer, then records a kboot handoff. The last lines are the loopback's 64-byte stand-in kernel, not `m1n1-linux.bin`. The host gzip reader accepts stored deflate blocks only. The real `Image.gz` is Huffman, so this program does not scan the boot image. m1n1's own decompressor does.
 
-A new kernel is per generation: an older one stays in the boot menu, so rolling back is picking it there (or `nixos-rebuild switch --rollback`).
+`upstream/m1n1` is not modified. A newer m1n1 is a different checkout, not a patch in this repo.
 
-Stage 2 (`/boot/m1n1/boot.bin`: m1n1 + device tree + U-Boot) is one file for all generations, written by the latest switch. The one it replaces is kept as `/boot/m1n1/boot.bin.prev`. If a new m1n1 or U-Boot never reaches the boot menu, hold the power button for recoveryOS, open Terminal, and put the previous one back:
+## Boot image
 
-```
-diskutil mount disk0s4      # the ESP, NIXBOOT
-cp /Volumes/NIXBOOT/m1n1/boot.bin.prev /Volumes/NIXBOOT/m1n1/boot.bin
-diskutil unmount /Volumes/NIXBOOT
-reboot
-```
+The image is four pieces, in the order m1n1 scans them:
 
-Then roll the repository back (`git revert`, or `nix flake update` back to the old lock) before the next switch, which would write the broken stage 2 again.
+1. `upstream/m1n1/build/m1n1.bin`, built for `T6040`, with no chainloading support and no payload of its own.
+2. One config line: `chosen.bootargs=earlycon console=ttySAC0,115200 debug rw`.
+3. `build/linux/j614s.dtb`, from `t6040-j614s.dts`. Compatible strings are `apple,j614s`, `apple,t6040`, `apple,arm-platform`.
+4. A gzip newc cpio, then `Image.gz`.
 
-Stage 1, the m1n1 on `macostest` that iBoot starts, only chainloads stage 2, so an old one keeps working; Apple lets only recoveryOS change it, never a running system. Each switch writes the stage 1 for its m1n1 to the ESP (`m1n1/stage1.bin`) with an install script, and says when the stage 1 that booted is a different one. `m1n1-status` shows what booted at each step. To update stage 1, in recoveryOS Terminal:
+`/init` mounts `/proc` and `/sys`, prints the devicetree model, `uname`, the CPU count, and `MemTotal`, then runs `setsid cttyhack /bin/sh`. That is a BusyBox shell from Debian `busybox-static`. It is not a NixOS closure. The kernel is that Linux tree's `defconfig`. AIC, the Samsung UART, and the PMGR power-state driver are built in. NVMe, DART, the mailbox, RTKit, SART, and the watchdog are modules, and this initramfs contains no modules, so the shell has no disk and no display.
 
-```
-diskutil mount disk0s4
-sh /Volumes/NIXBOOT/m1n1/stage1-install.sh         # this generation's stage 1
-sh /Volumes/NIXBOOT/m1n1/stage1-install.sh good    # or the last one seen booting
+Build the toolchain image once. The Dockerfile context is the m1n1 tree.
+
+```bash
+docker build -f docker/m1n1.Dockerfile -t nixos-m4pro-m1n1 upstream/m1n1
 ```
 
-It asks for confirmation and your password (kmutil), and refuses any volume but `macostest`. The ESP keeps the last stage 1 seen booting as `stage1-good.bin`, so a stage 1 that fails can be replaced from the same Terminal. `just m1n1-serve` (from the host, over USB) still works too.
+Build m1n1. Leave `config.h` alone. `CHAINLOADING` stays unset, so a machine that boots this file with nothing concatenated waits on the proxy instead of jumping to Linux.
 
-## Testing without installing
+```bash
+docker run --rm -v "$PWD/upstream/m1n1:/m1n1" -w /m1n1 nixos-m4pro-m1n1 \
+  bash -lc 'make -j"$(nproc)" EXTRA_CFLAGS=-DTARGET=0x6040'
+```
 
-- `tools/uboot-boot -- ARG -ARG ...` reboots, stops U-Boot over debug USB, and boots the installed generation with words added to or (`-ARG`) removed from its command line, for example `tools/uboot-boot -- dockchannel_hid.dyndbg=+p` for a driver's debug messages.
-- `M1N1DEVICE=/dev/cu.kis-100000-ch-0 .venv-m1n1/bin/python tools/tether-boot.py Image.gz dtb initrd -b "args"` boots any kernel over debug USB from the m1n1 proxy, with the console captured from the first line.
-- `tools/m1n1-try image.bin` runs an m1n1 image (or a whole stage 2) the way stage 1 chainloads it.
+The raw image is `upstream/m1n1/build/m1n1.bin`.
 
-## Recipes
+Build the kernel, the devicetree, the initramfs, and the concatenation. This needs a few gigabytes under `build/linux/` and a while of compile time.
 
-| Recipe | Does |
-|---|---|
-| `builder`, `setup` | host setup |
-| `build` | `.#boot-files` into `build/out` |
-| `m1n1 [stage1\|dev]` | m1n1 into `build/out` |
-| `restart` | restart into m1n1 and wait for its USB device |
-| `dev-boot [ram\|disk]` | boot the installer or the SSD's system: m1n1's stock `linux.py` over m1n1's USB device (about 9.5 MB/s), then the console over debug USB |
-| `connect`, `boot-ram`, `boot-disk` | fallback: everything over debug USB (about 0.5 MB/s) |
-| `sh "cmd" [timeout]` | run a command on the target's root shell, with its exit status |
-| `flash-partition`, `flash-format`, `flash-system`, `flash` | install to the SSD |
-| `set-password user` | set a user's password from the host, sending only its hash |
-| `update [branch]` | on the Mac: fetch the pushed branch, build natively, switch live |
-| `m1n1-serve [stage1\|dev]` | install m1n1 from recoveryOS |
-| `stage2-proxy` | from the U-Boot boot chain back to the USB proxy (debug m1n1 as stage 2) |
-| `stage2-serve` | serve the debug m1n1 to copy onto the ESP from recoveryOS, if stage 2 fails |
+```bash
+mkdir -p build/linux
+docker run --rm \
+  -v "$PWD/upstream/linux:/src:ro" \
+  -v "$PWD/build/linux:/out" \
+  -v "$PWD/upstream/m1n1/build/m1n1.bin:/m1n1/m1n1.bin:ro" \
+  -v "$PWD/scripts/build-m1n1-linux.sh:/build.sh:ro" \
+  nixos-m4pro-m1n1 bash /build.sh
+```
 
-Every boot is recorded under `build/runs/<time>/` (console log with timestamps, commands run, host log), with an index in `build/runs/index.md`.
+The script prints `BUILD_OK`. The file to copy to the second machine is `build/linux/m1n1-linux.bin`.
 
-## Known gaps
+## Trying the image
 
-No GPU acceleration, no backlight control, no sound, no suspend or CPU frequency scaling, no trackpad haptics, no USB-C data, and the m1n1 logo of stage 1 is still Asahi's until stage 1 is reinstalled (Boot chain updates). The order of work is in [docs/required_for_daily_use/list.md](docs/required_for_daily_use/list.md).
+This needs the target Mac already sitting in m1n1, and a second computer. A charge-only USB-C cable will not carry the serial pins. Use a SuperSpeed cable, plugged into the DFU port on both machines. On a 14-inch MacBook Pro that port is the left USB-C port closest to the hinge. When the second computer is also Apple Silicon, [macvdmtool](https://github.com/AsahiLinux/macvdmtool) is what brings the debug UART up.
+
+The m1n1 that iBoot starts is the `m1n1.bin` from the previous section, installed as the boot object of a second APFS volume from One True Recovery with `kmutil configure-boot`. Asahi's [m1n1 hypervisor preparation](https://asahilinux.org/docs/sw/m1n1-hypervisor/) is the write-up of that install. Point it at the second volume. The Asahi installer does not support this model, so it will not do this step.
+
+On the second computer, from the m1n1 checkout:
+
+```bash
+pip install -r requirements.txt
+export M1N1DEVICE=/dev/cu.usbmodemP_01   # Linux hosts usually use /dev/ttyACM0
+python3 proxyclient/tools/shell.py
+```
+
+A proxy prompt means the cable and m1n1 are up. Leave that shell, then:
+
+```bash
+python3 proxyclient/tools/chainload.py -r /path/to/m1n1-linux.bin
+```
+
+`-r` is required because the file is a raw image. When that command returns, open the same serial device at 115200. The banner from `/init` is the sign that Linux reached the shell. Typing in that window is the keyboard for it. The keyboard on the target Mac is not.
+
+`kboot_prepare_dt` still runs only on the machine that is in m1n1. It fills memory, the serial number, MAC addresses, and SEP from the live device tree. Those values are not in this repository.
